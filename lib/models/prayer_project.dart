@@ -1,51 +1,98 @@
+class PrayerNote {
+  final String text;
+  final DateTime createdAt;
+
+  PrayerNote({
+    required this.text,
+    required this.createdAt,
+  });
+
+  Map<String, dynamic> toMap() => {
+        'text': text,
+        'createdAt': createdAt.toIso8601String(),
+      };
+
+  factory PrayerNote.fromMap(Map<String, dynamic> map) {
+    return PrayerNote(
+      text: (map['text'] as String?) ?? '',
+      createdAt: DateTime.parse(map['createdAt'] as String),
+    );
+  }
+}
+
 class PrayerProject {
   final String id;
   final String title;
-
-  /// Stored internally as minutes
-  final int targetMinutes;
-
+  final int targetHours;
   final int durationDays;
   final DateTime startDate;
 
-  /// This changes as the user prays
   int totalMinutesPrayed;
+
+  /// NEW: journal-style notes
+  List<PrayerNote> notes;
 
   PrayerProject({
     required this.id,
     required this.title,
-    required this.targetMinutes,
+    required this.targetHours,
     required this.durationDays,
     required this.startDate,
     this.totalMinutesPrayed = 0,
-  });
+    List<PrayerNote>? notes,
+  }) : notes = notes ?? [];
 
-  /// Create project using hours (user-friendly)
-  factory PrayerProject.fromHours({
-    required String id,
-    required String title,
-    required int targetHours,
-    required int durationDays,
-    required DateTime startDate,
-  }) {
-    return PrayerProject(
-      id: id,
-      title: title,
-      targetMinutes: targetHours * 60,
-      durationDays: durationDays,
-      startDate: startDate,
-    );
+  double get progress {
+    final targetMinutes = targetHours * 60;
+    if (targetMinutes <= 0) return 0;
+    return (totalMinutesPrayed / targetMinutes).clamp(0, 1);
   }
 
-  /// Target shown to user
-  int get targetHours => (targetMinutes / 60).round();
+  double get dailyTargetHours {
+    if (durationDays <= 0) return 0;
+    return targetHours / durationDays;
+  }
 
-  /// Minutes to pray per day
-  int get dailyTargetMinutes => (targetMinutes / durationDays).ceil();
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'targetHours': targetHours,
+      'durationDays': durationDays,
+      'startDate': startDate.toIso8601String(),
+      'totalMinutesPrayed': totalMinutesPrayed,
 
-  /// Hours per day (UI display)
-  double get dailyTargetHours => dailyTargetMinutes / 60;
+      // NEW storage shape
+      'notes': notes.map((n) => n.toMap()).toList(),
+    };
+  }
 
-  /// Progress between 0.0 and 1.0
-  double get progress => totalMinutesPrayed / targetMinutes;
+  factory PrayerProject.fromMap(Map<String, dynamic> map) {
+    // ✅ Backward compatibility:
+    // Old versions stored notes as a single string: 'notes': 'some text'
+    // New version stores notes as a list of maps: 'notes': [{'text':..., 'createdAt':...}, ...]
+    final rawNotes = map['notes'];
+
+    List<PrayerNote> parsedNotes = [];
+
+    if (rawNotes is List) {
+      parsedNotes = rawNotes
+          .map((item) => PrayerNote.fromMap(Map<String, dynamic>.from(item)))
+          .toList();
+    } else if (rawNotes is String && rawNotes.trim().isNotEmpty) {
+      parsedNotes = [
+        PrayerNote(text: rawNotes.trim(), createdAt: DateTime.now())
+      ];
+    }
+
+    return PrayerProject(
+      id: map['id'] as String,
+      title: map['title'] as String,
+      targetHours: map['targetHours'] as int,
+      durationDays: map['durationDays'] as int,
+      startDate: DateTime.parse(map['startDate'] as String),
+      totalMinutesPrayed: (map['totalMinutesPrayed'] as int?) ?? 0,
+      notes: parsedNotes,
+    );
+  }
 }
