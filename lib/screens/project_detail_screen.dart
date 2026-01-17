@@ -22,6 +22,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Timer? _ticker;
   Duration _elapsed = Duration.zero;
 
+  bool _isPaused = false;
+
   // Notes
   final TextEditingController _newNoteCtrl = TextEditingController();
   bool _isSaving = false;
@@ -39,7 +41,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   String _formatDateTime(DateTime dt) {
-    // Simple readable format without extra packages
     final y = dt.year.toString().padLeft(4, '0');
     final mo = dt.month.toString().padLeft(2, '0');
     final d = dt.day.toString().padLeft(2, '0');
@@ -48,34 +49,54 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     return '$y-$mo-$d $h:$mi';
   }
 
-  void _startTimer() {
-    if (_stopwatch.isRunning) return;
-
-    _stopwatch.start();
+  void _startTicker() {
+    _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() => _elapsed = _stopwatch.elapsed);
     });
   }
 
-  Future<void> _stopTimerAndAdd() async {
+  void _startOrResumeTimer() {
+    if (_stopwatch.isRunning) return;
+
+    // If it was paused, resume from existing elapsed time
+    _stopwatch.start();
+    _startTicker();
+
+    setState(() {
+      _isPaused = false;
+    });
+  }
+
+  void _pauseTimer() {
     if (!_stopwatch.isRunning) return;
 
     _ticker?.cancel();
     _stopwatch.stop();
 
-    final minutes = _stopwatch.elapsed.inMinutes;
-    _stopwatch.reset();
+    setState(() {
+      _elapsed = _stopwatch.elapsed;
+      _isPaused = true;
+    });
+  }
 
-    setState(() => _elapsed = Duration.zero);
+  Future<void> _stopTimerAndAdd() async {
+    if (_stopwatch.isRunning) {
+      _ticker?.cancel();
+      _stopwatch.stop();
+    }
+
+    final minutes = _stopwatch.elapsed.inMinutes;
+
+    _stopwatch.reset();
+    setState(() {
+      _elapsed = Duration.zero;
+      _isPaused = false;
+    });
 
     if (minutes > 0) {
       await _addMinutes(minutes);
     }
-  }
-
-  void _pauseTimer() {
-    _ticker?.cancel();
-    _stopwatch.stop();
   }
 
   Future<void> _addMinutes(int minutes) async {
@@ -141,6 +162,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Widget build(BuildContext context) {
     final project = widget.project;
 
+    final bool canStartOrResume = !_stopwatch.isRunning;
+    final bool canPause = _stopwatch.isRunning;
+    final bool canStopAndAdd = _stopwatch.isRunning || _isPaused;
+
+    final String startLabel = _isPaused ? 'Resume' : 'Start';
+
     return Scaffold(
       appBar: AppBar(title: Text(project.title)),
       body: Padding(
@@ -148,7 +175,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         child: ListView(
           children: [
             Text('Target: ${project.targetHours} hours'),
-            Text('Daily target: ${project.dailyTargetHours.toStringAsFixed(2)} hours'),
+            Text(
+              'Daily target: ${project.dailyTargetHours.toStringAsFixed(2)} hours',
+            ),
             const SizedBox(height: 10),
             LinearProgressIndicator(value: project.progress),
             const SizedBox(height: 22),
@@ -177,17 +206,17 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 ElevatedButton(
-                  onPressed: _stopwatch.isRunning ? null : _startTimer,
-                  child: const Text('Start'),
+                  onPressed: canStartOrResume ? _startOrResumeTimer : null,
+                  child: Text(startLabel),
                 ),
                 const SizedBox(width: 10),
                 ElevatedButton(
-                  onPressed: _stopwatch.isRunning ? _pauseTimer : null,
+                  onPressed: canPause ? _pauseTimer : null,
                   child: const Text('Pause'),
                 ),
                 const SizedBox(width: 10),
                 ElevatedButton(
-                  onPressed: _stopwatch.isRunning ? _stopTimerAndAdd : null,
+                  onPressed: canStopAndAdd ? _stopTimerAndAdd : null,
                   child: const Text('Stop & Add'),
                 ),
               ],
