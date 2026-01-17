@@ -17,6 +17,8 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
   late final TextEditingController _hoursCtrl;
   late final TextEditingController _daysCtrl;
 
+  late DateTime _plannedStartDate;
+
   double? _dailyHours;
 
   @override
@@ -25,13 +27,13 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
     _titleCtrl = TextEditingController(text: widget.project.title);
     _hoursCtrl = TextEditingController(text: widget.project.targetHours.toString());
     _daysCtrl = TextEditingController(text: widget.project.durationDays.toString());
-    _recalculateDaily();
+    _plannedStartDate = widget.project.plannedStartDate;
+    _recalc();
   }
 
-  void _recalculateDaily() {
+  void _recalc() {
     final hours = double.tryParse(_hoursCtrl.text);
     final days = double.tryParse(_daysCtrl.text);
-
     if (hours != null && days != null && days > 0) {
       setState(() => _dailyHours = hours / days);
     } else {
@@ -39,9 +41,30 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
     }
   }
 
+  DateTime? get _endDate {
+    final days = int.tryParse(_daysCtrl.text);
+    if (days == null || days <= 0) return null;
+    return DateTime(_plannedStartDate.year, _plannedStartDate.month, _plannedStartDate.day)
+        .add(Duration(days: days - 1));
+  }
+
+  Future<void> _pickStartDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _plannedStartDate,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 5),
+    );
+
+    if (picked != null) {
+      setState(() => _plannedStartDate = picked);
+    }
+  }
+
   void _fillHours(int hours) {
     _hoursCtrl.text = hours.toString();
-    _recalculateDaily();
+    _recalc();
   }
 
   void _save() {
@@ -52,9 +75,9 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
       title: _titleCtrl.text.trim(),
       targetHours: int.parse(_hoursCtrl.text),
       durationDays: int.parse(_daysCtrl.text),
-      startDate: widget.project.startDate,
+      plannedStartDate: _plannedStartDate,
       totalMinutesPrayed: widget.project.totalMinutesPrayed,
-      notes: List<PrayerNote>.from(widget.project.notes),
+      dayNotes: Map<int, List<PrayerNote>>.from(widget.project.dayNotes),
     );
 
     Navigator.pop(context, updated);
@@ -70,6 +93,8 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final end = _endDate;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Edit Project')),
       body: Padding(
@@ -89,7 +114,7 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
                 controller: _hoursCtrl,
                 decoration: const InputDecoration(labelText: 'Target hours'),
                 keyboardType: TextInputType.number,
-                onChanged: (_) => _recalculateDaily(),
+                onChanged: (_) => _recalc(),
                 validator: (v) {
                   final n = int.tryParse(v ?? '');
                   if (n == null || n <= 0) return 'Enter valid hours';
@@ -114,7 +139,7 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
                 controller: _daysCtrl,
                 decoration: const InputDecoration(labelText: 'Number of days'),
                 keyboardType: TextInputType.number,
-                onChanged: (_) => _recalculateDaily(),
+                onChanged: (_) => _recalc(),
                 validator: (v) {
                   final n = int.tryParse(v ?? '');
                   if (n == null || n <= 0) return 'Enter valid days';
@@ -122,7 +147,28 @@ class _EditProjectScreenState extends State<EditProjectScreen> {
                 },
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
+
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Planned start date'),
+                subtitle: Text('${_plannedStartDate.year}-${_plannedStartDate.month.toString().padLeft(2, '0')}-${_plannedStartDate.day.toString().padLeft(2, '0')}'),
+                trailing: TextButton(
+                  onPressed: _pickStartDate,
+                  child: const Text('Pick'),
+                ),
+              ),
+
+              if (end != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'End date: ${end.year}-${end.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+
+              const SizedBox(height: 16),
               if (_dailyHours != null)
                 Text('You’ll pray about ${_dailyHours!.toStringAsFixed(2)} hours per day'),
 
