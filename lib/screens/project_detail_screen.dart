@@ -28,6 +28,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   final TextEditingController _newNoteCtrl = TextEditingController();
   bool _isSaving = false;
 
+  int? _selectedDay; // null = Today
+
   int get _totalMinutes => widget.project.totalMinutesPrayed;
   int get _hoursPrayed => _totalMinutes ~/ 60;
   int get _minsRemainder => _totalMinutes % 60;
@@ -38,6 +40,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final m = (_elapsed.inMinutes % 60).toString().padLeft(2, '0');
     final s = (_elapsed.inSeconds % 60).toString().padLeft(2, '0');
     return '$h:$m:$s';
+  }
+
+  String _fmtDate(DateTime dt) {
+    final y = dt.year.toString().padLeft(4, '0');
+    final mo = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    return '$y-$mo-$d';
   }
 
   String _formatDateTime(DateTime dt) {
@@ -59,7 +68,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   void _startOrResumeTimer() {
     if (_stopwatch.isRunning) return;
 
-    // If it was paused, resume from existing elapsed time
     _stopwatch.start();
     _startTicker();
 
@@ -126,14 +134,60 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     await widget.onPersist();
   }
 
+  int get _todayDayNumber => widget.project.dayNumberFor(DateTime.now());
+
+  int get _activeDayForNotes {
+    // If user chose a day, use it, else use today.
+    final chosen = _selectedDay;
+    if (chosen != null) return chosen;
+
+    // If today is before start, default to Day 1 view (planning notes)
+    if (_todayDayNumber == 0) return 1;
+
+    // If after end, default to last day view
+    if (_todayDayNumber == widget.project.durationDays + 1) {
+      return widget.project.durationDays;
+    }
+
+    return _todayDayNumber;
+  }
+
+  List<PrayerNote> get _notesForActiveDay {
+    final day = _activeDayForNotes;
+    return widget.project.dayNotes[day] ?? [];
+  }
+
+  Future<void> _pickDay() async {
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (_) {
+        return SimpleDialog(
+          title: const Text('Select day'),
+          children: List.generate(widget.project.durationDays, (i) {
+            final day = i + 1;
+            return SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, day),
+              child: Text('Day $day'),
+            );
+          }),
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() => _selectedDay = picked);
+    }
+  }
+
   Future<void> _addNote() async {
     final text = _newNoteCtrl.text.trim();
     if (text.isEmpty) return;
 
     setState(() => _isSaving = true);
 
-    widget.project.notes.insert(
-      0,
+    final day = _activeDayForNotes;
+    widget.project.addNoteForDay(
+      day,
       PrayerNote(text: text, createdAt: DateTime.now()),
     );
 
@@ -144,8 +198,18 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   Future<void> _deleteNote(int index) async {
+    final day = _activeDayForNotes;
+    final list = widget.project.dayNotes[day];
+    if (list == null || index < 0 || index >= list.length) return;
+
     setState(() => _isSaving = true);
-    widget.project.notes.removeAt(index);
+    list.removeAt(index);
+
+    // If day list becomes empty, remove the key
+    if (list.isEmpty) {
+      widget.project.dayNotes.remove(day);
+    }
+
     await widget.onPersist();
     if (mounted) setState(() => _isSaving = false);
   }
@@ -162,11 +226,23 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Widget build(BuildContext context) {
     final project = widget.project;
 
+    // schedule labels
+    final todayDay = _todayDayNumber;
+    final startIn = project.daysUntilStart(DateTime.now());
+    final scheduleText = () {
+      if (todayDay == 0) return 'Starts in $startIn day(s)';
+      if (todayDay == project.durationDays + 1) return 'Schedule complete';
+      return 'Day $todayDay of ${project.durationDays}';
+    }();
+
     final bool canStartOrResume = !_stopwatch.isRunning;
     final bool canPause = _stopwatch.isRunning;
     final bool canStopAndAdd = _stopwatch.isRunning || _isPaused;
 
     final String startLabel = _isPaused ? 'Resume' : 'Start';
+
+    final activeDayForNotes = _activeDayForNotes;
+    final notes = _notesForActiveDay;
 
     return Scaffold(
       appBar: AppBar(title: Text(project.title)),
@@ -177,6 +253,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             Text('Target: ${project.targetHours} hours'),
             Text(
               'Daily target: ${project.dailyTargetHours.toStringAsFixed(2)} hours',
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Planned: ${_fmtDate(project.plannedStartDate)} → ${_fmtDate(project.endDate)}',
+            ),
+            const SizedBox(height: 6),
+            Text(
+              scheduleText,
+              style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 10),
             LinearProgressIndicator(value: project.progress),
@@ -283,13 +368,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
             const SizedBox(height: 22),
 
-            // Notes journal
+            // Notes (Day-based)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Prayer Notes',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                Text(
+                  'Notes (Day $activeDayForNotes)',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 Text(
                   _isSaving ? 'Saving…' : 'Saved',
@@ -300,6 +385,22 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+
+            Wrap(
+              spacing: 10,
+              children: [
+                OutlinedButton(
+                  onPressed: () => setState(() => _selectedDay = null),
+                  child: const Text('Today'),
+                ),
+                OutlinedButton(
+                  onPressed: _pickDay,
+                  child: const Text('Pick Day'),
+                ),
+              ],
+            ),
+
             const SizedBox(height: 10),
 
             TextField(
@@ -307,7 +408,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               minLines: 2,
               maxLines: 4,
               decoration: const InputDecoration(
-                hintText: 'Add a new note (scripture, direction, prayer points)…',
+                hintText: 'Add a note for this day…',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -319,11 +420,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
             const SizedBox(height: 16),
 
-            if (project.notes.isEmpty)
-              const Text('No notes yet.')
+            if (notes.isEmpty)
+              const Text('No notes for this day yet.')
             else
-              ...List.generate(project.notes.length, (index) {
-                final note = project.notes[index];
+              ...List.generate(notes.length, (index) {
+                final note = notes[index];
                 return Card(
                   child: ListTile(
                     title: Text(note.text),
