@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:myprayerbank/models/prayer_project.dart';
-import 'package:myprayerbank/services/project_storage.dart';
-import 'package:myprayerbank/screens/add_project_screen.dart';
-import 'package:myprayerbank/screens/project_detail_screen.dart';
-import 'package:myprayerbank/screens/edit_project_screen.dart';
+import '../models/prayer_project.dart';
+import '../services/project_storage.dart';
+import 'add_project_screen.dart';
+import 'edit_project_screen.dart';
+import 'project_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -32,6 +32,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _persist() async {
     await ProjectStorage.saveProjects(projects);
+  }
+
+  String _fmtDate(DateTime dt) {
+    final d = dt.day.toString().padLeft(2, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final y = dt.year.toString().padLeft(4, '0');
+    return '$d-$m-$y';
+  }
+
+  String _statusText(PrayerProject p) {
+    final todayDay = p.dayNumberFor(DateTime.now());
+
+    if (todayDay == 0) {
+      final startIn = p.daysUntilStart(DateTime.now());
+      return 'Starts in $startIn day(s) • ${_fmtDate(p.plannedStartDate)}';
+    }
+
+    if (todayDay == p.durationDays + 1) {
+      return 'Schedule complete • Ended ${_fmtDate(p.endDate)}';
+    }
+
+    return 'Day $todayDay / ${p.durationDays} • Ends ${_fmtDate(p.endDate)}';
   }
 
   Future<void> _addProject() async {
@@ -150,9 +172,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       child: ListTile(
                         title: Text(project.title),
-                        subtitle: Text(
-                          'Target: ${project.targetHours} hrs • '
-                          'Daily: ${project.dailyTargetHours.toStringAsFixed(1)} hrs',
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Target: ${project.targetHours} hrs • '
+                              'Daily: ${project.dailyTargetHours.toStringAsFixed(1)} hrs',
+                            ),
+                            const SizedBox(height: 4),
+                            Text(_statusText(project)),
+                          ],
                         ),
                         trailing: Text('${(project.progress * 100).toStringAsFixed(0)}%'),
                         onTap: () => _openProject(project),

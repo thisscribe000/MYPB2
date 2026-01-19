@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:myprayerbank/models/prayer_project.dart';
+import '../models/prayer_project.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final PrayerProject project;
@@ -43,19 +43,29 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   String _fmtDate(DateTime dt) {
-    final y = dt.year.toString().padLeft(4, '0');
-    final mo = dt.month.toString().padLeft(2, '0');
     final d = dt.day.toString().padLeft(2, '0');
-    return '$y-$mo-$d';
+    final m = dt.month.toString().padLeft(2, '0');
+    final y = dt.year.toString().padLeft(4, '0');
+    return '$d-$m-$y';
   }
 
   String _formatDateTime(DateTime dt) {
-    final y = dt.year.toString().padLeft(4, '0');
-    final mo = dt.month.toString().padLeft(2, '0');
     final d = dt.day.toString().padLeft(2, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final y = dt.year.toString().padLeft(4, '0');
     final h = dt.hour.toString().padLeft(2, '0');
     final mi = dt.minute.toString().padLeft(2, '0');
-    return '$y-$mo-$d $h:$mi';
+    return '$d-$m-$y $h:$mi';
+  }
+
+  String _dateForDayLabel(int day) {
+    final date = DateTime(
+      widget.project.plannedStartDate.year,
+      widget.project.plannedStartDate.month,
+      widget.project.plannedStartDate.day,
+    ).add(Duration(days: day - 1));
+
+    return '${_fmtDate(date)} (Day $day)';
   }
 
   void _startTicker() {
@@ -137,7 +147,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   int get _todayDayNumber => widget.project.dayNumberFor(DateTime.now());
 
   int get _activeDayForNotes {
-    // If user chose a day, use it, else use today.
     final chosen = _selectedDay;
     if (chosen != null) return chosen;
 
@@ -167,7 +176,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             final day = i + 1;
             return SimpleDialogOption(
               onPressed: () => Navigator.pop(context, day),
-              child: Text('Day $day'),
+              child: Text(_dateForDayLabel(day)),
             );
           }),
         );
@@ -205,7 +214,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     setState(() => _isSaving = true);
     list.removeAt(index);
 
-    // If day list becomes empty, remove the key
     if (list.isEmpty) {
       widget.project.dayNotes.remove(day);
     }
@@ -226,9 +234,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Widget build(BuildContext context) {
     final project = widget.project;
 
-    // schedule labels
     final todayDay = _todayDayNumber;
     final startIn = project.daysUntilStart(DateTime.now());
+
     final scheduleText = () {
       if (todayDay == 0) return 'Starts in $startIn day(s)';
       if (todayDay == project.durationDays + 1) return 'Schedule complete';
@@ -251,13 +259,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         child: ListView(
           children: [
             Text('Target: ${project.targetHours} hours'),
-            Text(
-              'Daily target: ${project.dailyTargetHours.toStringAsFixed(2)} hours',
-            ),
+            Text('Daily target: ${project.dailyTargetHours.toStringAsFixed(2)} hours'),
             const SizedBox(height: 6),
-            Text(
-              'Planned: ${_fmtDate(project.plannedStartDate)} → ${_fmtDate(project.endDate)}',
-            ),
+            Text('Planned: ${_fmtDate(project.plannedStartDate)} → ${_fmtDate(project.endDate)}'),
             const SizedBox(height: 6),
             Text(
               scheduleText,
@@ -267,7 +271,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             LinearProgressIndicator(value: project.progress),
             const SizedBox(height: 22),
 
-            // Hour-first display
             Text(
               'Prayed: $_hoursPrayed hours',
               style: Theme.of(context).textTheme.headlineSmall,
@@ -280,7 +283,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
             const SizedBox(height: 18),
 
-            // Timer
             Text(
               _timerDisplay,
               style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w600),
@@ -309,11 +311,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
             const SizedBox(height: 22),
 
-            // Manual add
-            const Text(
-              'Add time manually',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            const Text('Add time manually', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             Wrap(
               spacing: 10,
@@ -335,7 +333,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
             const SizedBox(height: 22),
 
-            // Rounding options
             ExpansionTile(
               title: const Text('Rounding options'),
               children: [
@@ -368,12 +365,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
             const SizedBox(height: 22),
 
-            // Notes (Day-based)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Notes (Day $activeDayForNotes)',
+                  'Notes (${_dateForDayLabel(activeDayForNotes)})',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 Text(
