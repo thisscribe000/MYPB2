@@ -43,7 +43,7 @@ class PrayNowScreen extends StatelessWidget {
       }
     }
 
-    // Simple suggestion: pick the least-progress active project (if any)
+    // Suggestion logic
     PrayerProject? suggestion;
     if (activeToday.isNotEmpty) {
       activeToday.sort((a, b) => a.progress.compareTo(b.progress));
@@ -53,12 +53,12 @@ class PrayNowScreen extends StatelessWidget {
       suggestion = upcoming.first;
     }
 
-    void openProject(PrayerProject p) {
+    void openProject(PrayerProject project) {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => ProjectDetailScreen(
-            project: p,
+            project: project,
             onPersist: onPersist,
           ),
         ),
@@ -67,20 +67,23 @@ class PrayNowScreen extends StatelessWidget {
 
     Widget sectionTitle(String text) => Padding(
           padding: const EdgeInsets.only(top: 18, bottom: 8),
-          child: Text(text,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          child: Text(
+            text,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
         );
 
     Widget projectCard(PrayerProject p, {String? subtitleOverride}) {
       final prayedHours = (p.totalMinutesPrayed / 60).floor();
       final pct = (p.progress * 100).toStringAsFixed(0);
 
-      final defaultSubtitle = '${p.statusLabel} • $prayedHours/${p.targetHours}h • $pct%';
+      final subtitle =
+          subtitleOverride ?? '${p.statusLabel} • $prayedHours/${p.targetHours}h • $pct%';
 
       return Card(
         child: ListTile(
           title: Text(p.title),
-          subtitle: Text(subtitleOverride ?? defaultSubtitle),
+          subtitle: Text(subtitle),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => openProject(p),
         ),
@@ -102,37 +105,47 @@ class PrayNowScreen extends StatelessWidget {
 
             const SizedBox(height: 16),
 
-            if (suggestion != null)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Suggested',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+            // ✅ Clean: create a non-null local inside the check
+            if (suggestion != null) ...[
+              Builder(
+                builder: (context) {
+                  final s = suggestion!; // safe inside this guarded area
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Suggested',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            s.title,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            s.dayNumberFor(now) == 0
+                                ? 'Starts on ${_fmtDate(s.plannedStartDate)}'
+                                : 'Active today • Day ${s.dayNumberFor(now)}/${s.durationDays}',
+                          ),
+                          const SizedBox(height: 10),
+                          ElevatedButton(
+                            onPressed: () => openProject(s),
+                            child: const Text('Open & Pray'),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        suggestion.title,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        suggestion.dayNumberFor(now) == 0
-                            ? 'Starts on ${_fmtDate(suggestion.plannedStartDate)}'
-                            : 'Active today • Day ${suggestion.dayNumberFor(now)}/${suggestion.durationDays}',
-                      ),
-                      const SizedBox(height: 10),
-                      ElevatedButton(
-                        onPressed: () => openProject(suggestion),
-                        child: const Text('Open & Pray'),
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               ),
+            ],
 
             sectionTitle('Active today'),
             if (activeToday.isEmpty)
@@ -142,7 +155,8 @@ class PrayNowScreen extends StatelessWidget {
                 final day = p.dayNumberFor(now);
                 return projectCard(
                   p,
-                  subtitleOverride: 'Active • Day $day/${p.durationDays} • Ends ${_fmtDate(p.endDate)}',
+                  subtitleOverride:
+                      'Active • Day $day/${p.durationDays} • Ends ${_fmtDate(p.endDate)}',
                 );
               }),
 
@@ -154,7 +168,8 @@ class PrayNowScreen extends StatelessWidget {
                 final startIn = p.daysUntilStart(now);
                 return projectCard(
                   p,
-                  subtitleOverride: 'Starts in $startIn day(s) • ${_fmtDate(p.plannedStartDate)}',
+                  subtitleOverride:
+                      'Starts in $startIn day(s) • ${_fmtDate(p.plannedStartDate)}',
                 );
               }),
 
