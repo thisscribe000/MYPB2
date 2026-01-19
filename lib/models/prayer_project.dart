@@ -24,7 +24,7 @@ class PrayerProject {
   final String id;
   final String title;
   final int targetHours;
-  final int durationDays;
+  int durationDays;
 
   /// When the user plans to start (can be in the future)
   final DateTime plannedStartDate;
@@ -33,7 +33,6 @@ class PrayerProject {
   int totalMinutesPrayed;
 
   /// Notes grouped by day number (1..durationDays)
-  /// Example: { 70: [note1, note2], 71: [...] }
   Map<int, List<PrayerNote>> dayNotes;
 
   PrayerProject({
@@ -49,20 +48,11 @@ class PrayerProject {
   /// End date = plannedStartDate + (durationDays - 1)
   DateTime get endDate => plannedStartDate.add(Duration(days: durationDays - 1));
 
-  /// Progress toward target hours (time-based)
-  double get progress {
-    final targetMinutes = targetHours * 60;
-    if (targetMinutes <= 0) return 0;
-    return (totalMinutesPrayed / targetMinutes).clamp(0, 1);
-  }
+  int get targetMinutes => targetHours * 60;
 
-  /// Daily target in hours (time-based)
-  double get dailyTargetHours {
-    if (durationDays <= 0) return 0;
-    return targetHours / durationDays;
-  }
+  /// Completion logic
+  bool get isTargetReached => targetMinutes > 0 && totalMinutesPrayed >= targetMinutes;
 
-  /// Normalizes a date to midnight (local)
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
   /// Returns day number for a given date (1..durationDays), or:
@@ -81,6 +71,11 @@ class PrayerProject {
     return day;
   }
 
+  bool get isScheduleEnded {
+    final day = dayNumberFor(DateTime.now());
+    return day == durationDays + 1;
+  }
+
   bool isActiveOn(DateTime date) {
     final day = dayNumberFor(date);
     return day >= 1 && day <= durationDays;
@@ -92,10 +87,37 @@ class PrayerProject {
     return start.difference(current).inDays;
   }
 
+  /// Status label (gentle)
+  String get statusLabel {
+    if (isTargetReached) return 'Completed ✅';
+    final d = dayNumberFor(DateTime.now());
+    if (d == 0) return 'Upcoming';
+    if (d == durationDays + 1) return 'Schedule ended';
+    return 'Active';
+  }
+
+  /// Progress toward target hours (time-based)
+  double get progress {
+    if (targetMinutes <= 0) return 0;
+    return (totalMinutesPrayed / targetMinutes).clamp(0, 1);
+  }
+
+  /// Daily target in hours (time-based)
+  double get dailyTargetHours {
+    if (durationDays <= 0) return 0;
+    return targetHours / durationDays;
+  }
+
   /// Adds a note under a specific day number
   void addNoteForDay(int dayNumber, PrayerNote note) {
     dayNotes.putIfAbsent(dayNumber, () => []);
     dayNotes[dayNumber]!.insert(0, note);
+  }
+
+  /// Extend schedule by extra days (keeps start date)
+  void extendByDays(int extraDays) {
+    if (extraDays <= 0) return;
+    durationDays += extraDays;
   }
 
   Map<String, dynamic> toMap() {
@@ -116,9 +138,6 @@ class PrayerProject {
   }
 
   factory PrayerProject.fromMap(Map<String, dynamic> map) {
-    // plannedStartDate fallback:
-    // - if missing, use startDate if present
-    // - else default to today
     DateTime plannedStart;
     if (map['plannedStartDate'] is String) {
       plannedStart = DateTime.parse(map['plannedStartDate'] as String);
@@ -128,13 +147,9 @@ class PrayerProject {
       plannedStart = DateTime.now();
     }
 
-    // Backward compat for notes:
-    // - old: notes was String
-    // - old: notes was List of maps (journal)
-    // - new: dayNotes is Map<String, List<Map>>
     final Map<int, List<PrayerNote>> parsedDayNotes = {};
-
     final rawDayNotes = map['dayNotes'];
+
     if (rawDayNotes is Map) {
       rawDayNotes.forEach((k, v) {
         final day = int.tryParse(k.toString());
@@ -146,10 +161,8 @@ class PrayerProject {
         }
       });
     } else {
-      // Older formats under 'notes'
       final rawNotes = map['notes'];
       if (rawNotes is List) {
-        // list journal -> put into Day 1 by default
         parsedDayNotes[1] = rawNotes
             .map((item) => PrayerNote.fromMap(Map<String, dynamic>.from(item)))
             .toList();

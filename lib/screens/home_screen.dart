@@ -41,19 +41,25 @@ class _HomeScreenState extends State<HomeScreen> {
     return '$d-$m-$y';
   }
 
-  String _statusText(PrayerProject p) {
+  String _statusLine(PrayerProject p) {
+    // Priority: completed (hours) > upcoming > ended > active
+    if (p.isTargetReached) {
+      return 'Completed ✅ • ${p.targetHours}h reached';
+    }
+
     final todayDay = p.dayNumberFor(DateTime.now());
 
     if (todayDay == 0) {
       final startIn = p.daysUntilStart(DateTime.now());
-      return 'Starts in $startIn day(s) • ${_fmtDate(p.plannedStartDate)}';
+      return 'Upcoming • Starts in $startIn day(s) • ${_fmtDate(p.plannedStartDate)}';
     }
 
     if (todayDay == p.durationDays + 1) {
-      return 'Schedule complete • Ended ${_fmtDate(p.endDate)}';
+      final prayedHours = (p.totalMinutesPrayed / 60).floor();
+      return 'Schedule ended • Prayed $prayedHours/${p.targetHours}h • Ended ${_fmtDate(p.endDate)}';
     }
 
-    return 'Day $todayDay / ${p.durationDays} • Ends ${_fmtDate(p.endDate)}';
+    return 'Active • Day $todayDay/${p.durationDays} • Ends ${_fmtDate(p.endDate)}';
   }
 
   Future<void> _addProject() async {
@@ -180,7 +186,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               'Daily: ${project.dailyTargetHours.toStringAsFixed(1)} hrs',
                             ),
                             const SizedBox(height: 4),
-                            Text(_statusText(project)),
+                            Text(_statusLine(project)),
                           ],
                         ),
                         trailing: Text('${(project.progress * 100).toStringAsFixed(0)}%'),

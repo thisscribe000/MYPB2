@@ -64,7 +64,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       widget.project.plannedStartDate.month,
       widget.project.plannedStartDate.day,
     ).add(Duration(days: day - 1));
-
     return '${_fmtDate(date)} (Day $day)';
   }
 
@@ -150,14 +149,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final chosen = _selectedDay;
     if (chosen != null) return chosen;
 
-    // If today is before start, default to Day 1 view (planning notes)
-    if (_todayDayNumber == 0) return 1;
-
-    // If after end, default to last day view
+    if (_todayDayNumber == 0) return 1; // planning notes
     if (_todayDayNumber == widget.project.durationDays + 1) {
-      return widget.project.durationDays;
+      return widget.project.durationDays; // ended notes view
     }
-
     return _todayDayNumber;
   }
 
@@ -222,6 +217,139 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     if (mounted) setState(() => _isSaving = false);
   }
 
+  Future<void> _extendBy(int extraDays) async {
+    widget.project.extendByDays(extraDays);
+    await widget.onPersist();
+    setState(() {}); // refresh UI
+  }
+
+  Future<void> _extendCustom() async {
+    final ctrl = TextEditingController();
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Extend plan'),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Extra days',
+            hintText: 'e.g. 10',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final v = int.tryParse(ctrl.text.trim());
+              Navigator.pop(context, v);
+            },
+            child: const Text('Extend'),
+          ),
+        ],
+      ),
+    );
+
+    if (picked != null && picked > 0) {
+      await _extendBy(picked);
+    }
+  }
+
+  Widget _statusBanner() {
+    final p = widget.project;
+
+    // Completed (hours reached)
+    if (p.isTargetReached) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Text(
+            'Completed ✅ — Target reached (${p.targetHours}h). You can still keep logging time.',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+      );
+    }
+
+    final todayDay = _todayDayNumber;
+
+    // Upcoming
+    if (todayDay == 0) {
+      final startIn = p.daysUntilStart(DateTime.now());
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Text(
+            'Upcoming — Starts in $startIn day(s).',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+      );
+    }
+
+    // Schedule ended
+    if (todayDay == p.durationDays + 1) {
+      final prayedHours = (p.totalMinutesPrayed / 60).floor();
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Schedule ended',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+              ),
+              const SizedBox(height: 6),
+              Text('Progress: $prayedHours / ${p.targetHours} hours'),
+              const SizedBox(height: 10),
+              const Text(
+                'Would you like to extend the plan?',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  OutlinedButton(
+                    onPressed: () => _extendBy(7),
+                    child: const Text('+7 days'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _extendBy(14),
+                    child: const Text('+14 days'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _extendBy(30),
+                    child: const Text('+30 days'),
+                  ),
+                  OutlinedButton(
+                    onPressed: _extendCustom,
+                    child: const Text('Custom'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Active
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Text(
+          'Active — Day $todayDay of ${p.durationDays}',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _ticker?.cancel();
@@ -233,15 +361,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final project = widget.project;
-
-    final todayDay = _todayDayNumber;
-    final startIn = project.daysUntilStart(DateTime.now());
-
-    final scheduleText = () {
-      if (todayDay == 0) return 'Starts in $startIn day(s)';
-      if (todayDay == project.durationDays + 1) return 'Schedule complete';
-      return 'Day $todayDay of ${project.durationDays}';
-    }();
 
     final bool canStartOrResume = !_stopwatch.isRunning;
     final bool canPause = _stopwatch.isRunning;
@@ -258,15 +377,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         padding: const EdgeInsets.all(16),
         child: ListView(
           children: [
+            _statusBanner(),
+            const SizedBox(height: 10),
+
             Text('Target: ${project.targetHours} hours'),
             Text('Daily target: ${project.dailyTargetHours.toStringAsFixed(2)} hours'),
             const SizedBox(height: 6),
             Text('Planned: ${_fmtDate(project.plannedStartDate)} → ${_fmtDate(project.endDate)}'),
-            const SizedBox(height: 6),
-            Text(
-              scheduleText,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
             const SizedBox(height: 10),
             LinearProgressIndicator(value: project.progress),
             const SizedBox(height: 22),
