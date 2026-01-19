@@ -1,186 +1,198 @@
 import 'package:flutter/material.dart';
 import '../models/prayer_project.dart';
-import 'project_detail_screen.dart';
+import '../services/prayer_session.dart';
 
 class PrayNowScreen extends StatelessWidget {
   final List<PrayerProject> projects;
-  final Future<void> Function() onPersist;
+  final PrayerSessionController session;
+  final Future<void> Function(List<PrayerProject> updated) onProjectsUpdated;
 
   const PrayNowScreen({
     super.key,
     required this.projects,
-    required this.onPersist,
+    required this.session,
+    required this.onProjectsUpdated,
   });
 
-  String _fmtDate(DateTime dt) {
-    final d = dt.day.toString().padLeft(2, '0');
-    final m = dt.month.toString().padLeft(2, '0');
-    final y = dt.year.toString().padLeft(4, '0');
-    return '$d-$m-$y';
+  String _fmt2(int n) => n.toString().padLeft(2, '0');
+
+  String _timerText(int totalSeconds) {
+    final h = totalSeconds ~/ 3600;
+    final m = (totalSeconds % 3600) ~/ 60;
+    final s = totalSeconds % 60;
+    return '${_fmt2(h)}:${_fmt2(m)}:${_fmt2(s)}';
+  }
+
+  PrayerProject? _activeProject() {
+    final id = session.state.activeProjectId;
+    if (id == null) return null;
+    try {
+      return projects.firstWhere((p) => p.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<PrayerProject> _sortedProjects() {
+    final list = [...projects];
+    list.sort((a, b) {
+      final ad = a.lastPrayedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bd = b.lastPrayedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bd.compareTo(ad);
+    });
+    return list;
+  }
+
+  bool _canTapProject(PrayerSessionState s, PrayerProject p) {
+    if (s.activeProjectId == null) return true;
+    if (s.activeProjectId == p.id) return true;
+    if (s.isRunning) return false;
+    if (s.isPaused && s.elapsedSeconds > 0) return false;
+    return true;
+  }
+
+  void _showSnack(ScaffoldMessengerState messenger, String msg) {
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(content: Text(msg)));
   }
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
+    final sorted = _sortedProjects();
 
-    final activeToday = <PrayerProject>[];
-    final upcoming = <PrayerProject>[];
-    final endedOrCompleted = <PrayerProject>[];
+    return ValueListenableBuilder(
+      valueListenable: session.notifier,
+      builder: (context, _, __) {
+        final s = session.state;
+        final active = _activeProject();
+        final elapsed = session.displayedElapsedSeconds;
 
-    for (final p in projects) {
-      if (p.isTargetReached) {
-        endedOrCompleted.add(p);
-        continue;
-      }
+        Future<void> stopAndAdd() async {
+          if (active == null) return;
 
-      final day = p.dayNumberFor(now);
-      if (day == 0) {
-        upcoming.add(p);
-      } else if (day == p.durationDays + 1) {
-        endedOrCompleted.add(p);
-      } else {
-        activeToday.add(p);
-      }
-    }
+          final messenger =
+              ScaffoldMessenger.of(context); // capture before await
 
-    // Suggestion logic
-    PrayerProject? suggestion;
-    if (activeToday.isNotEmpty) {
-      activeToday.sort((a, b) => a.progress.compareTo(b.progress));
-      suggestion = activeToday.first;
-    } else if (upcoming.isNotEmpty) {
-      upcoming.sort((a, b) => a.plannedStartDate.compareTo(b.plannedStartDate));
-      suggestion = upcoming.first;
-    }
+          final seconds = await session.stopAndReset();
+          final minutesToAdd = seconds ~/ 60;
+          if (minutesToAdd <= 0) return;
 
-    void openProject(PrayerProject project) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ProjectDetailScreen(
-            project: project,
-            onPersist: onPersist,
-          ),
-        ),
-      );
-    }
+          final updated = [...projects];
+          final idx = updated.indexWhere((p) => p.id == active.id);
+          if (idx == -1) return;
 
-    Widget sectionTitle(String text) => Padding(
-          padding: const EdgeInsets.only(top: 18, bottom: 8),
-          child: Text(
-            text,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-        );
+          updated[idx].totalMinutesPrayed += minutesToAdd;
+          updated[idx].lastPrayedAt = DateTime.now();
 
-    Widget projectCard(PrayerProject p, {String? subtitleOverride}) {
-      final prayedHours = (p.totalMinutesPrayed / 60).floor();
-      final pct = (p.progress * 100).toStringAsFixed(0);
+          await onProjectsUpdated(updated);
 
-      final subtitle =
-          subtitleOverride ?? '${p.statusLabel} • $prayedHours/${p.targetHours}h • $pct%';
+          _showSnack(
+              messenger, 'Added $minutesToAdd minute(s) to "${active.title}".');
+        }
 
-      return Card(
-        child: ListTile(
-          title: Text(p.title),
-          subtitle: Text(subtitle),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => openProject(p),
-        ),
-      );
-    }
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Pray Now')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: ListView(
-          children: [
-            const Text(
-              'Start a prayer session',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            const Text('Pick a project and begin. Your timer and notes are inside the project.'),
-
-            const SizedBox(height: 16),
-
-            // ✅ Clean: create a non-null local inside the check
-            if (suggestion != null) ...[
-              Builder(
-                builder: (context) {
-                  final s = suggestion!; // safe inside this guarded area
-                  return Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Suggested',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            s.title,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            s.dayNumberFor(now) == 0
-                                ? 'Starts on ${_fmtDate(s.plannedStartDate)}'
-                                : 'Active today • Day ${s.dayNumberFor(now)}/${s.durationDays}',
-                          ),
-                          const SizedBox(height: 10),
-                          ElevatedButton(
-                            onPressed: () => openProject(s),
-                            child: const Text('Open & Pray'),
-                          ),
-                        ],
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: ListView(
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        active?.title ?? 'Select a project to pray for',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
+                      const SizedBox(height: 6),
+                      if (active != null)
+                        Text(
+                          '${active.statusLabel} • Target ${active.targetHours}h • ${(active.progress * 100).toStringAsFixed(0)}%',
+                        )
+                      else
+                        const Text('Tap a project below to select it.'),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Center(
+                child: Text(
+                  _timerText(elapsed),
+                  style: const TextStyle(
+                      fontSize: 42, fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton(
+                    onPressed: (active == null)
+                        ? null
+                        : (s.isRunning
+                            ? null
+                            : (s.isPaused ? session.resume : session.start)),
+                    child: Text(s.isPaused ? 'Resume' : 'Start'),
+                  ),
+                  const SizedBox(width: 10),
+                  ElevatedButton(
+                    onPressed: s.isRunning ? session.pause : null,
+                    child: const Text('Pause'),
+                  ),
+                  const SizedBox(width: 10),
+                  ElevatedButton(
+                    onPressed: (s.isRunning || s.isPaused) ? stopAndAdd : null,
+                    child: const Text('Stop & Add'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Projects (most recent first)',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              if (sorted.isEmpty)
+                const Text('No projects yet. Go to Projects tab and add one.')
+              else
+                ...sorted.map((p) {
+                  final isSelected = (s.activeProjectId == p.id);
+
+                  return Card(
+                    child: ListTile(
+                      title: Text(p.title),
+                      subtitle:
+                          Text('${p.statusLabel} • ${p.targetHours}h target'),
+                      trailing:
+                          isSelected ? const Icon(Icons.check_circle) : null,
+                      onTap: () async {
+                        final messenger = ScaffoldMessenger.of(
+                            context); // capture before await
+
+                        if (!_canTapProject(s, p)) {
+                          _showSnack(
+                              messenger, 'Stop the timer to switch project.');
+                          return;
+                        }
+
+                        final ok = await session.selectProject(p.id);
+
+                        if (!ok) {
+                          _showSnack(
+                              messenger, 'Stop the timer to switch project.');
+                        }
+                      },
                     ),
                   );
-                },
-              ),
+                }),
             ],
-
-            sectionTitle('Active today'),
-            if (activeToday.isEmpty)
-              const Text('No active projects today.')
-            else
-              ...activeToday.map((p) {
-                final day = p.dayNumberFor(now);
-                return projectCard(
-                  p,
-                  subtitleOverride:
-                      'Active • Day $day/${p.durationDays} • Ends ${_fmtDate(p.endDate)}',
-                );
-              }),
-
-            sectionTitle('Upcoming'),
-            if (upcoming.isEmpty)
-              const Text('No upcoming projects.')
-            else
-              ...upcoming.map((p) {
-                final startIn = p.daysUntilStart(now);
-                return projectCard(
-                  p,
-                  subtitleOverride:
-                      'Starts in $startIn day(s) • ${_fmtDate(p.plannedStartDate)}',
-                );
-              }),
-
-            sectionTitle('Ended / Completed'),
-            if (endedOrCompleted.isEmpty)
-              const Text('Nothing here yet.')
-            else
-              ...endedOrCompleted.map((p) => projectCard(p)),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

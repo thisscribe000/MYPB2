@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
 import '../models/prayer_project.dart';
+import '../services/prayer_session.dart';
 import 'add_project_screen.dart';
 import 'edit_project_screen.dart';
 import 'project_detail_screen.dart';
 
 class ProjectsTab extends StatefulWidget {
   final List<PrayerProject> projects;
-  final Future<void> Function() onPersist;
+  final PrayerSessionController session;
 
-  /// If projects list changes (add/edit/delete), we send updated list back to AppShell
+  final Future<void> Function() onPersist;
   final Future<void> Function(List<PrayerProject> updated) onProjectsChanged;
 
   const ProjectsTab({
     super.key,
     required this.projects,
+    required this.session,
     required this.onPersist,
     required this.onProjectsChanged,
   });
@@ -33,12 +35,9 @@ class _ProjectsTabState extends State<ProjectsTab> {
   }
 
   String _statusLine(PrayerProject p) {
-    if (p.isTargetReached) {
-      return 'Completed ✅ • ${p.targetHours}h reached';
-    }
+    if (p.isTargetReached) return 'Completed ✅ • ${p.targetHours}h reached';
 
     final todayDay = p.dayNumberFor(DateTime.now());
-
     if (todayDay == 0) {
       final startIn = p.daysUntilStart(DateTime.now());
       return 'Upcoming • Starts in $startIn day(s) • ${_fmtDate(p.plannedStartDate)}';
@@ -71,7 +70,8 @@ class _ProjectsTabState extends State<ProjectsTab> {
       MaterialPageRoute(
         builder: (_) => ProjectDetailScreen(
           project: project,
-          onPersist: widget.onPersist,
+          session: widget.session,
+          onProjectsUpdated: widget.onProjectsChanged,
         ),
       ),
     ).then((_) => setState(() {}));
@@ -146,45 +146,53 @@ class _ProjectsTabState extends State<ProjectsTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addProject,
-        child: const Icon(Icons.add),
-      ),
-      body: projects.isEmpty
-          ? const Center(
-              child: Text(
-                'No prayer projects yet.\nTap + to add one.',
-                textAlign: TextAlign.center,
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.only(bottom: 80),
-              itemCount: projects.length,
-              itemBuilder: (context, index) {
-                final project = projects[index];
-                return Card(
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: ListTile(
-                    title: Text(project.title),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Target: ${project.targetHours} hrs • '
-                          'Daily: ${project.dailyTargetHours.toStringAsFixed(1)} hrs',
-                        ),
-                        const SizedBox(height: 4),
-                        Text(_statusLine(project)),
-                      ],
+    return Stack(
+      children: [
+        projects.isEmpty
+            ? const Center(
+                child: Text(
+                  'No prayer projects yet.\nTap + to add one.',
+                  textAlign: TextAlign.center,
+                ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.only(bottom: 90),
+                itemCount: projects.length,
+                itemBuilder: (context, index) {
+                  final project = projects[index];
+                  return Card(
+                    margin:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    child: ListTile(
+                      title: Text(project.title),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Target: ${project.targetHours} hrs • '
+                            'Daily: ${project.dailyTargetHours.toStringAsFixed(1)} hrs',
+                          ),
+                          const SizedBox(height: 4),
+                          Text(_statusLine(project)),
+                        ],
+                      ),
+                      trailing: Text(
+                          '${(project.progress * 100).toStringAsFixed(0)}%'),
+                      onTap: () => _openProject(project),
+                      onLongPress: () => _showProjectActions(index),
                     ),
-                    trailing: Text('${(project.progress * 100).toStringAsFixed(0)}%'),
-                    onTap: () => _openProject(project),
-                    onLongPress: () => _showProjectActions(index),
-                  ),
-                );
-              },
-            ),
+                  );
+                },
+              ),
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: FloatingActionButton(
+            onPressed: _addProject,
+            child: const Icon(Icons.add),
+          ),
+        ),
+      ],
     );
   }
 }

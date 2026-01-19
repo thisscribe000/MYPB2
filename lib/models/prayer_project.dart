@@ -26,13 +26,13 @@ class PrayerProject {
   final int targetHours;
   int durationDays;
 
-  /// When the user plans to start (can be in the future)
   final DateTime plannedStartDate;
 
-  /// Logged prayer time in minutes (internal)
   int totalMinutesPrayed;
 
-  /// Notes grouped by day number (1..durationDays)
+  /// Used for sorting on Pray Now
+  DateTime? lastPrayedAt;
+
   Map<int, List<PrayerNote>> dayNotes;
 
   PrayerProject({
@@ -42,22 +42,20 @@ class PrayerProject {
     required this.durationDays,
     required this.plannedStartDate,
     this.totalMinutesPrayed = 0,
+    this.lastPrayedAt,
     Map<int, List<PrayerNote>>? dayNotes,
   }) : dayNotes = dayNotes ?? {};
 
-  /// End date = plannedStartDate + (durationDays - 1)
-  DateTime get endDate => plannedStartDate.add(Duration(days: durationDays - 1));
+  DateTime get endDate =>
+      plannedStartDate.add(Duration(days: durationDays - 1));
 
   int get targetMinutes => targetHours * 60;
 
-  /// Completion logic
-  bool get isTargetReached => targetMinutes > 0 && totalMinutesPrayed >= targetMinutes;
+  bool get isTargetReached =>
+      targetMinutes > 0 && totalMinutesPrayed >= targetMinutes;
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
-  /// Returns day number for a given date (1..durationDays), or:
-  /// - 0 if before start date
-  /// - durationDays+1 if after end date
   int dayNumberFor(DateTime date) {
     final start = _dateOnly(plannedStartDate);
     final current = _dateOnly(date);
@@ -76,18 +74,12 @@ class PrayerProject {
     return day == durationDays + 1;
   }
 
-  bool isActiveOn(DateTime date) {
-    final day = dayNumberFor(date);
-    return day >= 1 && day <= durationDays;
-  }
-
   int daysUntilStart(DateTime date) {
     final start = _dateOnly(plannedStartDate);
     final current = _dateOnly(date);
     return start.difference(current).inDays;
   }
 
-  /// Status label (gentle)
   String get statusLabel {
     if (isTargetReached) return 'Completed ✅';
     final d = dayNumberFor(DateTime.now());
@@ -96,25 +88,21 @@ class PrayerProject {
     return 'Active';
   }
 
-  /// Progress toward target hours (time-based)
   double get progress {
     if (targetMinutes <= 0) return 0;
     return (totalMinutesPrayed / targetMinutes).clamp(0, 1);
   }
 
-  /// Daily target in hours (time-based)
   double get dailyTargetHours {
     if (durationDays <= 0) return 0;
     return targetHours / durationDays;
   }
 
-  /// Adds a note under a specific day number
   void addNoteForDay(int dayNumber, PrayerNote note) {
     dayNotes.putIfAbsent(dayNumber, () => []);
     dayNotes[dayNumber]!.insert(0, note);
   }
 
-  /// Extend schedule by extra days (keeps start date)
   void extendByDays(int extraDays) {
     if (extraDays <= 0) return;
     durationDays += extraDays;
@@ -133,6 +121,7 @@ class PrayerProject {
       'durationDays': durationDays,
       'plannedStartDate': plannedStartDate.toIso8601String(),
       'totalMinutesPrayed': totalMinutesPrayed,
+      'lastPrayedAt': lastPrayedAt?.toIso8601String(),
       'dayNotes': notesMap,
     };
   }
@@ -147,6 +136,11 @@ class PrayerProject {
       plannedStart = DateTime.now();
     }
 
+    DateTime? lastPrayedAt;
+    if (map['lastPrayedAt'] is String) {
+      lastPrayedAt = DateTime.tryParse(map['lastPrayedAt'] as String);
+    }
+
     final Map<int, List<PrayerNote>> parsedDayNotes = {};
     final rawDayNotes = map['dayNotes'];
 
@@ -156,7 +150,8 @@ class PrayerProject {
         if (day == null) return;
         if (v is List) {
           parsedDayNotes[day] = v
-              .map((item) => PrayerNote.fromMap(Map<String, dynamic>.from(item)))
+              .map(
+                  (item) => PrayerNote.fromMap(Map<String, dynamic>.from(item)))
               .toList();
         }
       });
@@ -180,6 +175,7 @@ class PrayerProject {
       durationDays: map['durationDays'] as int,
       plannedStartDate: plannedStart,
       totalMinutesPrayed: (map['totalMinutesPrayed'] as int?) ?? 0,
+      lastPrayedAt: lastPrayedAt,
       dayNotes: parsedDayNotes,
     );
   }
