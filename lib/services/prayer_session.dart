@@ -60,74 +60,78 @@ class PrayerSessionState {
   }
 }
 
-class PrayerSessionController {
+class PrayerSessionController extends ChangeNotifier {
   static const String boxName = 'prayer_session_box';
   static const String keyName = 'session';
 
-  final ValueNotifier<PrayerSessionState> notifier =
-      ValueNotifier<PrayerSessionState>(PrayerSessionState.idle());
-
+  PrayerSessionState _state = PrayerSessionState.idle();
   Timer? _ticker;
 
-  PrayerSessionState get state => notifier.value;
+  PrayerSessionState get state => _state;
 
   Future<void> init() async {
     final box = await Hive.openBox(boxName);
     final raw = box.get(keyName);
 
     if (raw is Map) {
-      notifier.value =
-          PrayerSessionState.fromMap(Map<String, dynamic>.from(raw));
+      _state = PrayerSessionState.fromMap(Map<String, dynamic>.from(raw));
     } else {
-      notifier.value = PrayerSessionState.idle();
+      _state = PrayerSessionState.idle();
     }
 
     _ensureTicker();
+    notifyListeners();
   }
 
   Future<void> _save() async {
     final box = await Hive.openBox(boxName);
-    await box.put(keyName, state.toMap());
+    await box.put(keyName, _state.toMap());
+  }
+
+  void _setState(PrayerSessionState next) {
+    _state = next;
+    notifyListeners();
   }
 
   void _ensureTicker() {
     _ticker?.cancel();
-    if (state.isRunning) {
+
+    if (_state.isRunning) {
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-        // just trigger listeners so UI updates every second
-        notifier.value = notifier.value;
+        // ✅ legal now (ChangeNotifier)
+        notifyListeners();
       });
     }
   }
 
   int get displayedElapsedSeconds {
-    if (!state.isRunning || state.startedAtEpochMs == null) {
-      return state.elapsedSeconds;
+    if (!_state.isRunning || _state.startedAtEpochMs == null) {
+      return _state.elapsedSeconds;
     }
     final now = DateTime.now().millisecondsSinceEpoch;
-    final delta = ((now - state.startedAtEpochMs!) / 1000).floor();
-    return state.elapsedSeconds + delta;
+    final delta = ((now - _state.startedAtEpochMs!) / 1000).floor();
+    return _state.elapsedSeconds + delta;
   }
 
-  /// Select project ONLY when not running.
-  /// If paused with elapsed > 0, we also lock switching to protect the session.
   bool canSelectProject(String projectId) {
-    if (state.activeProjectId == null) return true;
-    if (state.activeProjectId == projectId) return true;
-    if (state.isRunning) return false;
-    if (state.isPaused && state.elapsedSeconds > 0) return false;
+    if (_state.activeProjectId == null) return true;
+    if (_state.activeProjectId == projectId) return true;
+    if (_state.isRunning) return false;
+    if (_state.isPaused && _state.elapsedSeconds > 0) return false;
     return true;
   }
 
   Future<bool> selectProject(String projectId) async {
     if (!canSelectProject(projectId)) return false;
 
-    notifier.value = PrayerSessionState(
-      activeProjectId: projectId,
-      isRunning: false,
-      isPaused: false,
-      elapsedSeconds: 0,
-      startedAtEpochMs: null,
+    _setState(
+      PrayerSessionState(
+        activeProjectId: projectId,
+        isRunning: false,
+        isPaused: false,
+        elapsedSeconds: 0,
+        startedAtEpochMs: null,
+      ),
     );
 
     await _save();
@@ -136,13 +140,15 @@ class PrayerSessionController {
   }
 
   Future<void> start() async {
-    if (state.activeProjectId == null) return;
-    if (state.isRunning) return;
+    if (_state.activeProjectId == null) return;
+    if (_state.isRunning) return;
 
-    notifier.value = state.copyWith(
-      isRunning: true,
-      isPaused: false,
-      startedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
+    _setState(
+      _state.copyWith(
+        isRunning: true,
+        isPaused: false,
+        startedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
+      ),
     );
 
     await _save();
@@ -150,16 +156,18 @@ class PrayerSessionController {
   }
 
   Future<void> pause() async {
-    if (!state.isRunning || state.startedAtEpochMs == null) return;
+    if (!_state.isRunning || _state.startedAtEpochMs == null) return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    final delta = ((now - state.startedAtEpochMs!) / 1000).floor();
+    final delta = ((now - _state.startedAtEpochMs!) / 1000).floor();
 
-    notifier.value = state.copyWith(
-      isRunning: false,
-      isPaused: true,
-      elapsedSeconds: state.elapsedSeconds + delta,
-      startedAtEpochMs: null,
+    _setState(
+      _state.copyWith(
+        isRunning: false,
+        isPaused: true,
+        elapsedSeconds: _state.elapsedSeconds + delta,
+        startedAtEpochMs: null,
+      ),
     );
 
     await _save();
@@ -167,33 +175,35 @@ class PrayerSessionController {
   }
 
   Future<void> resume() async {
-    if (state.activeProjectId == null) return;
-    if (state.isRunning) return;
-    if (!state.isPaused) return;
+    if (_state.activeProjectId == null) return;
+    if (_state.isRunning) return;
+    if (!_state.isPaused) return;
 
-    notifier.value = state.copyWith(
-      isRunning: true,
-      isPaused: false,
-      startedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
+    _setState(
+      _state.copyWith(
+        isRunning: true,
+        isPaused: false,
+        startedAtEpochMs: DateTime.now().millisecondsSinceEpoch,
+      ),
     );
 
     await _save();
     _ensureTicker();
   }
 
-  /// Returns the elapsed seconds and resets session to idle (keeps activeProjectId = null)
   Future<int> stopAndReset() async {
     final seconds = displayedElapsedSeconds;
 
-    notifier.value = PrayerSessionState.idle();
+    _setState(PrayerSessionState.idle());
 
     await _save();
     _ensureTicker();
     return seconds;
   }
 
+  @override
   void dispose() {
     _ticker?.cancel();
-    notifier.dispose();
+    super.dispose();
   }
 }

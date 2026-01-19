@@ -60,9 +60,9 @@ class PrayNowScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final sorted = _sortedProjects();
 
-    return ValueListenableBuilder(
-      valueListenable: session.notifier,
-      builder: (context, _, __) {
+    return AnimatedBuilder(
+      animation: session,
+      builder: (context, _) {
         final s = session.state;
         final active = _activeProject();
         final elapsed = session.displayedElapsedSeconds;
@@ -70,8 +70,7 @@ class PrayNowScreen extends StatelessWidget {
         Future<void> stopAndAdd() async {
           if (active == null) return;
 
-          final messenger =
-              ScaffoldMessenger.of(context); // capture before await
+          final messenger = ScaffoldMessenger.of(context);
 
           final seconds = await session.stopAndReset();
           final minutesToAdd = seconds ~/ 60;
@@ -170,8 +169,7 @@ class PrayNowScreen extends StatelessWidget {
                       trailing:
                           isSelected ? const Icon(Icons.check_circle) : null,
                       onTap: () async {
-                        final messenger = ScaffoldMessenger.of(
-                            context); // capture before await
+                        final messenger = ScaffoldMessenger.of(context);
 
                         if (!_canTapProject(s, p)) {
                           _showSnack(
@@ -180,7 +178,6 @@ class PrayNowScreen extends StatelessWidget {
                         }
 
                         final ok = await session.selectProject(p.id);
-
                         if (!ok) {
                           _showSnack(
                               messenger, 'Stop the timer to switch project.');
