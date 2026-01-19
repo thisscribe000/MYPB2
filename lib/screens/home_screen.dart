@@ -5,6 +5,7 @@ import 'add_project_screen.dart';
 import 'edit_project_screen.dart';
 import 'project_detail_screen.dart';
 import 'analytics_screen.dart';
+import 'pray_now_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -98,6 +99,21 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _openPrayNow() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PrayNowScreen(
+          projects: projects,
+          onPersist: () async {
+            await _persist();
+            setState(() {});
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _showProjectActions(int index) async {
     final project = projects[index];
 
@@ -168,6 +184,11 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('My Prayer Bank'),
         actions: [
+          IconButton(
+            tooltip: 'Pray Now',
+            onPressed: _openPrayNow,
+            icon: const Icon(Icons.play_circle),
+          ),
           IconButton(
             tooltip: 'Analytics',
             onPressed: _openAnalytics,
