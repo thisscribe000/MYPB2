@@ -33,6 +33,9 @@ class PrayerProject {
   /// Used for sorting on Pray Now
   DateTime? lastPrayedAt;
 
+  /// Hidden leftover seconds (0-59) so timer can resume precisely
+  int carrySeconds;
+
   Map<int, List<PrayerNote>> dayNotes;
 
   PrayerProject({
@@ -43,6 +46,7 @@ class PrayerProject {
     required this.plannedStartDate,
     this.totalMinutesPrayed = 0,
     this.lastPrayedAt,
+    this.carrySeconds = 0,
     Map<int, List<PrayerNote>>? dayNotes,
   }) : dayNotes = dayNotes ?? {};
 
@@ -122,6 +126,7 @@ class PrayerProject {
       'plannedStartDate': plannedStartDate.toIso8601String(),
       'totalMinutesPrayed': totalMinutesPrayed,
       'lastPrayedAt': lastPrayedAt?.toIso8601String(),
+      'carrySeconds': carrySeconds,
       'dayNotes': notesMap,
     };
   }
@@ -141,6 +146,14 @@ class PrayerProject {
       lastPrayedAt = DateTime.tryParse(map['lastPrayedAt'] as String);
     }
 
+    final carrySecondsRaw = map['carrySeconds'];
+    int carrySeconds = 0;
+    if (carrySecondsRaw is int) {
+      carrySeconds = carrySecondsRaw.clamp(0, 59);
+    } else if (carrySecondsRaw is double) {
+      carrySeconds = carrySecondsRaw.toInt().clamp(0, 59);
+    }
+
     final Map<int, List<PrayerNote>> parsedDayNotes = {};
     final rawDayNotes = map['dayNotes'];
 
@@ -150,8 +163,8 @@ class PrayerProject {
         if (day == null) return;
         if (v is List) {
           parsedDayNotes[day] = v
-              .map(
-                  (item) => PrayerNote.fromMap(Map<String, dynamic>.from(item)))
+              .map((item) =>
+                  PrayerNote.fromMap(Map<String, dynamic>.from(item)))
               .toList();
         }
       });
@@ -176,6 +189,7 @@ class PrayerProject {
       plannedStartDate: plannedStart,
       totalMinutesPrayed: (map['totalMinutesPrayed'] as int?) ?? 0,
       lastPrayedAt: lastPrayedAt,
+      carrySeconds: carrySeconds,
       dayNotes: parsedDayNotes,
     );
   }

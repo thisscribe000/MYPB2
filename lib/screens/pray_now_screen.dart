@@ -44,6 +44,7 @@ class PrayNowScreen extends StatelessWidget {
   }
 
   bool _canTapProject(PrayerSessionState s, PrayerProject p) {
+    if (p.statusLabel == 'Upcoming') return false; // upcoming not selectable to pray
     if (s.activeProjectId == null) return true;
     if (s.activeProjectId == p.id) return true;
     if (s.isRunning) return false;
@@ -74,19 +75,29 @@ class PrayNowScreen extends StatelessWidget {
 
           final seconds = await session.stopAndReset();
           final minutesToAdd = seconds ~/ 60;
-          if (minutesToAdd <= 0) return;
+          final remainderSeconds = seconds % 60;
 
+          // Update project totals
           final updated = [...projects];
           final idx = updated.indexWhere((p) => p.id == active.id);
           if (idx == -1) return;
 
-          updated[idx].totalMinutesPrayed += minutesToAdd;
+          if (minutesToAdd > 0) {
+            updated[idx].totalMinutesPrayed += minutesToAdd;
+          }
+          updated[idx].carrySeconds = remainderSeconds;
           updated[idx].lastPrayedAt = DateTime.now();
 
           await onProjectsUpdated(updated);
 
-          _showSnack(
-              messenger, 'Added $minutesToAdd minute(s) to "${active.title}".');
+          // Keep it selected and show carrySeconds immediately
+          await session.selectProject(active.id, initialElapsedSeconds: remainderSeconds);
+
+          if (minutesToAdd > 0) {
+            _showSnack(messenger, 'Added $minutesToAdd minute(s) to "${active.title}".');
+          } else {
+            _showSnack(messenger, 'Saved ${remainderSeconds}s for "${active.title}".');
+          }
         }
 
         return Padding(
@@ -121,8 +132,7 @@ class PrayNowScreen extends StatelessWidget {
               Center(
                 child: Text(
                   _timerText(elapsed),
-                  style: const TextStyle(
-                      fontSize: 42, fontWeight: FontWeight.w700),
+                  style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w700),
                 ),
               ),
               const SizedBox(height: 12),
@@ -160,27 +170,35 @@ class PrayNowScreen extends StatelessWidget {
               else
                 ...sorted.map((p) {
                   final isSelected = (s.activeProjectId == p.id);
+                  final isUpcoming = p.statusLabel == 'Upcoming';
 
                   return Card(
                     child: ListTile(
                       title: Text(p.title),
-                      subtitle:
-                          Text('${p.statusLabel} • ${p.targetHours}h target'),
-                      trailing:
-                          isSelected ? const Icon(Icons.check_circle) : null,
+                      subtitle: Text('${p.statusLabel} • ${p.targetHours}h target'),
+                      trailing: isSelected
+                          ? const Icon(Icons.check_circle)
+                          : (isUpcoming ? const Icon(Icons.lock_outline) : null),
                       onTap: () async {
                         final messenger = ScaffoldMessenger.of(context);
 
                         if (!_canTapProject(s, p)) {
                           _showSnack(
-                              messenger, 'Stop the timer to switch project.');
+                            messenger,
+                            isUpcoming
+                                ? 'This project starts later. You can pray on the start date.'
+                                : 'Stop the timer to switch project.',
+                          );
                           return;
                         }
 
-                        final ok = await session.selectProject(p.id);
+                        final ok = await session.selectProject(
+                          p.id,
+                          initialElapsedSeconds: p.carrySeconds,
+                        );
+
                         if (!ok) {
-                          _showSnack(
-                              messenger, 'Stop the timer to switch project.');
+                          _showSnack(messenger, 'Stop the timer to switch project.');
                         }
                       },
                     ),

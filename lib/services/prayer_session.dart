@@ -98,7 +98,6 @@ class PrayerSessionController extends ChangeNotifier {
 
     if (_state.isRunning) {
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-        // ✅ legal now (ChangeNotifier)
         notifyListeners();
       });
     }
@@ -121,15 +120,20 @@ class PrayerSessionController extends ChangeNotifier {
     return true;
   }
 
-  Future<bool> selectProject(String projectId) async {
+  Future<bool> selectProject(
+    String projectId, {
+    int initialElapsedSeconds = 0,
+  }) async {
     if (!canSelectProject(projectId)) return false;
+
+    final safeInitial = initialElapsedSeconds < 0 ? 0 : initialElapsedSeconds;
 
     _setState(
       PrayerSessionState(
         activeProjectId: projectId,
         isRunning: false,
         isPaused: false,
-        elapsedSeconds: 0,
+        elapsedSeconds: safeInitial,
         startedAtEpochMs: null,
       ),
     );
