@@ -15,10 +15,9 @@ class MyPrayerBankApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'My Prayer Bank',
-      theme: ThemeData(
-        useMaterial3: true,
-      ),
+      theme: ThemeData(useMaterial3: true),
       home: const HomeScreen(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }

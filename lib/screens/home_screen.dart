@@ -4,6 +4,7 @@ import '../services/project_storage.dart';
 import 'add_project_screen.dart';
 import 'edit_project_screen.dart';
 import 'project_detail_screen.dart';
+import 'analytics_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -42,7 +43,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _statusLine(PrayerProject p) {
-    // Priority: completed (hours) > upcoming > ended > active
     if (p.isTargetReached) {
       return 'Completed ✅ • ${p.targetHours}h reached';
     }
@@ -87,6 +87,15 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     ).then((_) => setState(() {}));
+  }
+
+  void _openAnalytics() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AnalyticsScreen(projects: projects),
+      ),
+    );
   }
 
   Future<void> _showProjectActions(int index) async {
@@ -156,7 +165,16 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My Prayer Bank')),
+      appBar: AppBar(
+        title: const Text('My Prayer Bank'),
+        actions: [
+          IconButton(
+            tooltip: 'Analytics',
+            onPressed: _openAnalytics,
+            icon: const Icon(Icons.insights),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addProject,
         child: const Icon(Icons.add),
