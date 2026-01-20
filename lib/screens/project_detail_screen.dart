@@ -4,12 +4,17 @@ import '../services/prayer_session.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final PrayerProject project;
+
+  /// ✅ pass the full projects list so we can persist properly
+  final List<PrayerProject> projects;
+
   final PrayerSessionController session;
   final Future<void> Function(List<PrayerProject> updated) onProjectsUpdated;
 
   const ProjectDetailScreen({
     super.key,
     required this.project,
+    required this.projects,
     required this.session,
     required this.onProjectsUpdated,
   });
@@ -51,12 +56,32 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
           final seconds = await widget.session.stopAndReset();
           final minutesToAdd = seconds ~/ 60;
-          if (minutesToAdd <= 0) return;
+          final remainderSeconds = seconds % 60;
 
-          project.totalMinutesPrayed += minutesToAdd;
-          project.lastPrayedAt = DateTime.now();
+          // ✅ update the project in the shared list and persist
+          final updated = [...widget.projects];
+          final idx = updated.indexWhere((p) => p.id == project.id);
+          if (idx == -1) return;
 
-          _snack('Added $minutesToAdd minute(s) to "${project.title}".');
+          if (minutesToAdd > 0) {
+            updated[idx].totalMinutesPrayed += minutesToAdd;
+          }
+          updated[idx].carrySeconds = remainderSeconds;
+          updated[idx].lastPrayedAt = DateTime.now();
+
+          await widget.onProjectsUpdated(updated);
+
+          // ✅ keep selected and show correct remainder seconds immediately
+          await widget.session.selectProject(
+            project.id,
+            initialElapsedSeconds: remainderSeconds,
+          );
+
+          if (minutesToAdd > 0) {
+            _snack('Added $minutesToAdd minute(s) to "${project.title}".');
+          } else {
+            _snack('Saved ${remainderSeconds}s for "${project.title}".');
+          }
         }
 
         return Scaffold(
@@ -88,7 +113,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                     child: Column(
                       children: [
                         Text(
-                          _timerText(isActiveProject ? elapsed : 0),
+                          _timerText(isActiveProject ? elapsed : project.carrySeconds),
                           style: const TextStyle(
                             fontSize: 34,
                             fontWeight: FontWeight.w700,
@@ -102,7 +127,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           ),
                         if (!isActiveProject && !hasSomeOtherActive)
                           const Text(
-                            'Use Pray Now tab to select this project and start praying.',
+                            'No timer is running. Start from Pray Now by selecting this project.',
                             textAlign: TextAlign.center,
                           ),
                         const SizedBox(height: 10),
@@ -128,10 +153,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                             ),
                             const SizedBox(width: 10),
                             ElevatedButton(
-                              onPressed:
-                                  isActiveProject && (s.isRunning || s.isPaused)
-                                      ? stopAndAddHere
-                                      : null,
+                              onPressed: isActiveProject &&
+                                      (s.isRunning || s.isPaused)
+                                  ? stopAndAddHere
+                                  : null,
                               child: const Text('Stop & Add'),
                             ),
                           ],
@@ -139,11 +164,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  'Notes UI will be restored in the next phase.',
-                  style: TextStyle(color: Colors.grey),
                 ),
               ],
             ),

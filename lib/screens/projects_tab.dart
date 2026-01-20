@@ -1,23 +1,22 @@
 import 'package:flutter/material.dart';
 import '../models/prayer_project.dart';
+import '../services/project_storage.dart';
 import '../services/prayer_session.dart';
 import 'add_project_screen.dart';
-import 'edit_project_screen.dart';
 import 'project_detail_screen.dart';
 
 class ProjectsTab extends StatefulWidget {
   final List<PrayerProject> projects;
   final PrayerSessionController session;
 
-  final Future<void> Function() onPersist;
-  final Future<void> Function(List<PrayerProject> updated) onProjectsChanged;
+  /// Parent owns persistence, but we still accept updates and notify parent.
+  final Future<void> Function(List<PrayerProject> updated) onProjectsUpdated;
 
   const ProjectsTab({
     super.key,
     required this.projects,
     required this.session,
-    required this.onPersist,
-    required this.onProjectsChanged,
+    required this.onProjectsUpdated,
   });
 
   @override
@@ -27,172 +26,124 @@ class ProjectsTab extends StatefulWidget {
 class _ProjectsTabState extends State<ProjectsTab> {
   List<PrayerProject> get projects => widget.projects;
 
-  String _fmtDate(DateTime dt) {
-    final d = dt.day.toString().padLeft(2, '0');
-    final m = dt.month.toString().padLeft(2, '0');
-    final y = dt.year.toString().padLeft(4, '0');
-    return '$d-$m-$y';
+  List<PrayerProject> get upcomingProjects =>
+      projects.where((p) => p.dayNumberFor(DateTime.now()) == 0).toList();
+
+  List<PrayerProject> get activeOrEndedProjects =>
+      projects.where((p) => p.dayNumberFor(DateTime.now()) != 0).toList();
+
+  Future<void> _persist(List<PrayerProject> updated) async {
+    // Save
+    await ProjectStorage.saveProjects(updated);
+    // Notify parent
+    await widget.onProjectsUpdated(updated);
   }
 
-  String _statusLine(PrayerProject p) {
-    if (p.isTargetReached) return 'Completed ✅ • ${p.targetHours}h reached';
-
-    final todayDay = p.dayNumberFor(DateTime.now());
-    if (todayDay == 0) {
-      final startIn = p.daysUntilStart(DateTime.now());
-      return 'Upcoming • Starts in $startIn day(s) • ${_fmtDate(p.plannedStartDate)}';
-    }
-
-    if (todayDay == p.durationDays + 1) {
-      final prayedHours = (p.totalMinutesPrayed / 60).floor();
-      return 'Schedule ended • Prayed $prayedHours/${p.targetHours}h • Ended ${_fmtDate(p.endDate)}';
-    }
-
-    return 'Active • Day $todayDay/${p.durationDays} • Ends ${_fmtDate(p.endDate)}';
-  }
-
-  Future<void> _addProject() async {
-    final result = await Navigator.push(
+  void _openAddProject() {
+    Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const AddProjectScreen()),
+      MaterialPageRoute(
+        builder: (_) => AddProjectScreen(
+          onAdd: (project) async {
+            final updated = [...projects, project];
+            await _persist(updated);
+          },
+          fromPrayNow: false,
+        ),
+      ),
     );
-
-    if (result is PrayerProject) {
-      final updated = [...projects, result];
-      await widget.onProjectsChanged(updated);
-      setState(() {});
-    }
   }
 
-  void _openProject(PrayerProject project) {
+  void _openProjectDetail(PrayerProject project) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ProjectDetailScreen(
           project: project,
+          projects: projects, // ✅ required now
           session: widget.session,
-          onProjectsUpdated: widget.onProjectsChanged,
+          onProjectsUpdated: (updated) async {
+            // If the detail screen gave us a full list, persist it.
+            // (It will, for Stop & Add sync.)
+            if (updated.isNotEmpty) {
+              await _persist(updated);
+            } else {
+              // Safety fallback: re-save current projects list.
+              await _persist([...projects]);
+            }
+          },
         ),
       ),
-    ).then((_) => setState(() {}));
-  }
-
-  Future<void> _showProjectActions(int index) async {
-    final project = projects[index];
-
-    showModalBottomSheet(
-      context: context,
-      builder: (_) {
-        return SafeArea(
-          child: Wrap(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.edit),
-                title: const Text('Edit'),
-                onTap: () async {
-                  Navigator.pop(context);
-                  final updated = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => EditProjectScreen(project: project),
-                    ),
-                  );
-
-                  if (updated is PrayerProject) {
-                    final list = [...projects];
-                    list[index] = updated;
-                    await widget.onProjectsChanged(list);
-                    setState(() {});
-                  }
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.delete),
-                title: const Text('Delete'),
-                onTap: () async {
-                  Navigator.pop(context);
-
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      title: const Text('Delete project?'),
-                      content: Text('Delete "${project.title}" permanently?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Cancel'),
-                        ),
-                        ElevatedButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('Delete'),
-                        ),
-                      ],
-                    ),
-                  );
-
-                  if (confirm == true) {
-                    final list = [...projects]..removeAt(index);
-                    await widget.onProjectsChanged(list);
-                    setState(() {});
-                  }
-                },
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        projects.isEmpty
-            ? const Center(
-                child: Text(
-                  'No prayer projects yet.\nTap + to add one.',
-                  textAlign: TextAlign.center,
-                ),
-              )
-            : ListView.builder(
-                padding: const EdgeInsets.only(bottom: 90),
-                itemCount: projects.length,
-                itemBuilder: (context, index) {
-                  final project = projects[index];
-                  return Card(
-                    margin:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    child: ListTile(
-                      title: Text(project.title),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Target: ${project.targetHours} hrs • '
-                            'Daily: ${project.dailyTargetHours.toStringAsFixed(1)} hrs',
-                          ),
-                          const SizedBox(height: 4),
-                          Text(_statusLine(project)),
-                        ],
-                      ),
-                      trailing: Text(
-                          '${(project.progress * 100).toStringAsFixed(0)}%'),
-                      onTap: () => _openProject(project),
-                      onLongPress: () => _showProjectActions(index),
+    // Sort: most recent prayed first (nulls last)
+    final sortedActive = [...activeOrEndedProjects]
+      ..sort((a, b) {
+        final ad = a.lastPrayedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bd = b.lastPrayedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bd.compareTo(ad);
+      });
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Projects')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _openAddProject,
+        child: const Icon(Icons.add),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          if (upcomingProjects.isNotEmpty) ...[
+            const Text(
+              'Upcoming',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            ...upcomingProjects.map((p) => Card(
+                  child: ListTile(
+                    title: Text(p.title),
+                    subtitle: Text(
+                      'Starts: ${_fmtDDMMYYYY(p.plannedStartDate)} • ${p.durationDays} days • ${p.targetHours}h',
                     ),
-                  );
-                },
-              ),
-        Positioned(
-          right: 16,
-          bottom: 16,
-          child: FloatingActionButton(
-            onPressed: _addProject,
-            child: const Icon(Icons.add),
+                    trailing: const Icon(Icons.lock_outline),
+                    onTap: () => _openProjectDetail(p),
+                  ),
+                )),
+            const SizedBox(height: 16),
+          ],
+          const Text(
+            'All Projects',
+            style: TextStyle(fontWeight: FontWeight.bold),
           ),
-        ),
-      ],
+          const SizedBox(height: 8),
+          if (sortedActive.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 24),
+              child: Center(child: Text('No projects yet. Tap + to add one.')),
+            )
+          else
+            ...sortedActive.map((p) => Card(
+                  child: ListTile(
+                    title: Text(p.title),
+                    subtitle: Text(
+                      '${p.statusLabel} • ${p.targetHours}h target • ${(p.progress * 100).toStringAsFixed(0)}%',
+                    ),
+                    onTap: () => _openProjectDetail(p),
+                  ),
+                )),
+          const SizedBox(height: 80),
+        ],
+      ),
     );
+  }
+
+  String _fmtDDMMYYYY(DateTime d) {
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
+    final yyyy = d.year.toString();
+    return '$dd-$mm-$yyyy';
   }
 }

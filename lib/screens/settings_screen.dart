@@ -5,24 +5,34 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return ListView(
       padding: const EdgeInsets.all(16),
-      child: ListView(
-        children: const [
-          Text(
-            'Settings',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+      children: const [
+        Card(
+          child: ListTile(
+            leading: Icon(Icons.notifications),
+            title: Text('Reminders'),
+            subtitle:
+                Text('Coming soon: schedule prayer sessions & notifications'),
           ),
-          SizedBox(height: 10),
-          Text('Coming soon:'),
-          SizedBox(height: 10),
-          Text('• Daily goals'),
-          Text('• Reminders / notifications'),
-          Text('• Theme & UI options'),
-          Text('• Export (PDF / text)'),
-          Text('• Backup & restore'),
-        ],
-      ),
+        ),
+        SizedBox(height: 10),
+        Card(
+          child: ListTile(
+            leading: Icon(Icons.backup),
+            title: Text('Backup / Restore'),
+            subtitle: Text('Coming soon: export/import your prayer data'),
+          ),
+        ),
+        SizedBox(height: 10),
+        Card(
+          child: ListTile(
+            leading: Icon(Icons.tune),
+            title: Text('Timer behavior'),
+            subtitle: Text('Coming soon: rounding rules and preferences'),
+          ),
+        ),
+      ],
     );
   }
 }

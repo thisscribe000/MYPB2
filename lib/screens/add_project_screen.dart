@@ -1,9 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:myprayerbank/models/prayer_project.dart';
 import 'dart:math';
+import '../models/prayer_project.dart';
 
 class AddProjectScreen extends StatefulWidget {
-  const AddProjectScreen({super.key});
+  final void Function(PrayerProject project) onAdd;
+
+  /// If true, after saving we pop back to Pray Now flow.
+  /// (We’ll wire this when we add the Pray Now FAB.)
+  final bool fromPrayNow;
+
+  const AddProjectScreen({
+    super.key,
+    required this.onAdd,
+    this.fromPrayNow = false,
+  });
 
   @override
   State<AddProjectScreen> createState() => _AddProjectScreenState();
@@ -12,81 +22,72 @@ class AddProjectScreen extends StatefulWidget {
 class _AddProjectScreenState extends State<AddProjectScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final TextEditingController _titleCtrl = TextEditingController();
-  final TextEditingController _hoursCtrl = TextEditingController();
-  final TextEditingController _daysCtrl = TextEditingController();
+  final _titleCtrl = TextEditingController();
+  final _targetHoursCtrl = TextEditingController();
+  final _daysCtrl = TextEditingController();
 
-  DateTime _plannedStartDate = DateTime.now();
-  double? _dailyHours;
+  DateTime _startDate = _dateOnly(DateTime.now());
+
+  static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
   @override
-  void initState() {
-    super.initState();
-    _recalc();
-  }
-
-  void _recalc() {
-    final hours = double.tryParse(_hoursCtrl.text);
-    final days = double.tryParse(_daysCtrl.text);
-    if (hours != null && days != null && days > 0) {
-      setState(() => _dailyHours = hours / days);
-    } else {
-      setState(() => _dailyHours = null);
-    }
-  }
-
-  DateTime? get _endDate {
-    final days = int.tryParse(_daysCtrl.text);
-    if (days == null || days <= 0) return null;
-    return DateTime(_plannedStartDate.year, _plannedStartDate.month, _plannedStartDate.day)
-        .add(Duration(days: days - 1));
+  void dispose() {
+    _titleCtrl.dispose();
+    _targetHoursCtrl.dispose();
+    _daysCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _pickStartDate() async {
-    final now = DateTime.now();
+    final today = _dateOnly(DateTime.now());
+
     final picked = await showDatePicker(
       context: context,
-      initialDate: _plannedStartDate,
-      firstDate: DateTime(now.year - 1),
-      lastDate: DateTime(now.year + 5),
+      initialDate: _startDate.isBefore(today) ? today : _startDate,
+      firstDate: today, // ✅ blocks past dates
+      lastDate: DateTime(today.year + 5),
     );
 
     if (picked != null) {
-      setState(() => _plannedStartDate = picked);
+      setState(() {
+        _startDate = _dateOnly(picked);
+      });
     }
-  }
-
-  void _fillHours(int hours) {
-    _hoursCtrl.text = hours.toString();
-    _recalc();
   }
 
   void _save() {
     if (!_formKey.currentState!.validate()) return;
 
+    final title = _titleCtrl.text.trim();
+    final targetHours = int.parse(_targetHoursCtrl.text.trim());
+    final days = int.parse(_daysCtrl.text.trim());
+
+    final id = Random().nextInt(999999).toString();
+
     final project = PrayerProject(
-      id: Random().nextInt(1000000).toString(),
-      title: _titleCtrl.text.trim(),
-      targetHours: int.parse(_hoursCtrl.text),
-      durationDays: int.parse(_daysCtrl.text),
-      plannedStartDate: _plannedStartDate,
+      id: id,
+      title: title,
+      targetHours: targetHours,
+      durationDays: days,
+      plannedStartDate: _startDate,
     );
 
-    Navigator.pop(context, project);
+    widget.onAdd(project);
+
+    // ✅ If user came from Pray Now, we just pop back.
+    // (Pray Now will already be in the stack.)
+    Navigator.pop(context);
   }
 
-  @override
-  void dispose() {
-    _titleCtrl.dispose();
-    _hoursCtrl.dispose();
-    _daysCtrl.dispose();
-    super.dispose();
+  String _fmtDate(DateTime d) {
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
+    final yyyy = d.year.toString();
+    return '$dd-$mm-$yyyy';
   }
 
   @override
   Widget build(BuildContext context) {
-    final end = _endDate;
-
     return Scaffold(
       appBar: AppBar(title: const Text('Add Project')),
       body: Padding(
@@ -97,77 +98,79 @@ class _AddProjectScreenState extends State<AddProjectScreen> {
             children: [
               TextFormField(
                 controller: _titleCtrl,
-                decoration: const InputDecoration(labelText: 'Project title'),
-                validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
-              ),
-              const SizedBox(height: 16),
-
-              TextFormField(
-                controller: _hoursCtrl,
-                decoration: const InputDecoration(labelText: 'Target hours'),
-                keyboardType: TextInputType.number,
-                onChanged: (_) => _recalc(),
+                decoration: const InputDecoration(
+                  labelText: 'Project title',
+                  border: OutlineInputBorder(),
+                ),
+                textInputAction: TextInputAction.next,
                 validator: (v) {
-                  final n = int.tryParse(v ?? '');
-                  if (n == null || n <= 0) return 'Enter valid hours';
+                  final t = (v ?? '').trim();
+                  if (t.isEmpty) return 'Title is required';
+                  if (t.length < 2) return 'Title is too short';
                   return null;
                 },
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
 
-              Wrap(
-                spacing: 8,
-                children: [20, 50, 100, 200, 300]
-                    .map((h) => OutlinedButton(
-                          onPressed: () => _fillHours(h),
-                          child: Text('$h h'),
-                        ))
-                    .toList(),
+              TextFormField(
+                controller: _targetHoursCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Target hours (e.g. 50)',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
+                validator: (v) {
+                  final t = (v ?? '').trim();
+                  if (t.isEmpty) return 'Target hours is required';
+                  final n = int.tryParse(t);
+                  if (n == null) return 'Enter a valid number';
+                  if (n <= 0) return 'Must be greater than 0';
+                  return null;
+                },
               ),
-
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
 
               TextFormField(
                 controller: _daysCtrl,
-                decoration: const InputDecoration(labelText: 'Number of days'),
+                decoration: const InputDecoration(
+                  labelText: 'Duration (days) (e.g. 10)',
+                  border: OutlineInputBorder(),
+                ),
                 keyboardType: TextInputType.number,
-                onChanged: (_) => _recalc(),
+                textInputAction: TextInputAction.done,
                 validator: (v) {
-                  final n = int.tryParse(v ?? '');
-                  if (n == null || n <= 0) return 'Enter valid days';
+                  final t = (v ?? '').trim();
+                  if (t.isEmpty) return 'Duration days is required';
+                  final n = int.tryParse(t);
+                  if (n == null) return 'Enter a valid number';
+                  if (n <= 0) return 'Must be greater than 0';
+                  if (n > 3650) return 'Too long (max 3650 days)';
                   return null;
                 },
               ),
-
               const SizedBox(height: 16),
 
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Planned start date'),
-                subtitle: Text('${_plannedStartDate.year}-${_plannedStartDate.month.toString().padLeft(2, '0')}-${_plannedStartDate.day.toString().padLeft(2, '0')}'),
-                trailing: TextButton(
-                  onPressed: _pickStartDate,
-                  child: const Text('Pick'),
+              Card(
+                child: ListTile(
+                  title: const Text('Start date'),
+                  subtitle: Text('${_fmtDate(_startDate)} (Day 1)'),
+                  trailing: const Icon(Icons.calendar_month),
+                  onTap: _pickStartDate,
                 ),
               ),
+              const SizedBox(height: 20),
 
-              if (end != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'End date: ${end.year}-${end.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')}',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-
-              const SizedBox(height: 16),
-              if (_dailyHours != null)
-                Text('You’ll pray about ${_dailyHours!.toStringAsFixed(2)} hours per day'),
-
-              const SizedBox(height: 24),
-              ElevatedButton(
+              ElevatedButton.icon(
                 onPressed: _save,
-                child: const Text('Save Project'),
+                icon: const Icon(Icons.save),
+                label: const Text('Save Project'),
+              ),
+              const SizedBox(height: 10),
+
+              const Text(
+                'Note: Start date can only be today or later.',
+                style: TextStyle(color: Colors.grey),
               ),
             ],
           ),

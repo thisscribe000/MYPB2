@@ -23,14 +23,12 @@ class PrayNowScreen extends StatelessWidget {
     return '${_fmt2(h)}:${_fmt2(m)}:${_fmt2(s)}';
   }
 
-  PrayerProject? _activeProject() {
-    final id = session.state.activeProjectId;
+  PrayerProject? _findProject(String? id) {
     if (id == null) return null;
-    try {
-      return projects.firstWhere((p) => p.id == id);
-    } catch (_) {
-      return null;
+    for (final p in projects) {
+      if (p.id == id) return p;
     }
+    return null;
   }
 
   List<PrayerProject> _sortedProjects() {
@@ -43,18 +41,23 @@ class PrayNowScreen extends StatelessWidget {
     return list;
   }
 
-  bool _canTapProject(PrayerSessionState s, PrayerProject p) {
-    if (p.statusLabel == 'Upcoming') return false; // upcoming not selectable to pray
-    if (s.activeProjectId == null) return true;
-    if (s.activeProjectId == p.id) return true;
-    if (s.isRunning) return false;
-    if (s.isPaused && s.elapsedSeconds > 0) return false;
-    return true;
-  }
+  bool _isUpcoming(PrayerProject p) => p.dayNumberFor(DateTime.now()) == 0;
 
-  void _showSnack(ScaffoldMessengerState messenger, String msg) {
+  void _snack(ScaffoldMessengerState messenger, String msg) {
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  bool _canTapProject(PrayerSessionState s, PrayerProject p) {
+    if (_isUpcoming(p)) return false;
+
+    if (s.activeProjectId == null) return true;
+    if (s.activeProjectId == p.id) return true;
+
+    if (s.isRunning) return false;
+    if (s.isPaused && s.elapsedSeconds > 0) return false;
+
+    return true;
   }
 
   @override
@@ -64,20 +67,20 @@ class PrayNowScreen extends StatelessWidget {
     return AnimatedBuilder(
       animation: session,
       builder: (context, _) {
+        final messenger = ScaffoldMessenger.of(context); // ✅ capture once
+
         final s = session.state;
-        final active = _activeProject();
-        final elapsed = session.displayedElapsedSeconds;
+        final active = _findProject(s.activeProjectId);
+
+        final elapsed = (active == null) ? 0 : session.displayedElapsedSeconds;
 
         Future<void> stopAndAdd() async {
           if (active == null) return;
-
-          final messenger = ScaffoldMessenger.of(context);
 
           final seconds = await session.stopAndReset();
           final minutesToAdd = seconds ~/ 60;
           final remainderSeconds = seconds % 60;
 
-          // Update project totals
           final updated = [...projects];
           final idx = updated.indexWhere((p) => p.id == active.id);
           if (idx == -1) return;
@@ -90,13 +93,18 @@ class PrayNowScreen extends StatelessWidget {
 
           await onProjectsUpdated(updated);
 
-          // Keep it selected and show carrySeconds immediately
-          await session.selectProject(active.id, initialElapsedSeconds: remainderSeconds);
+          // ✅ After saving, keep selected and show remainder precisely
+          await session.selectProject(
+            active.id,
+            initialElapsedSeconds: remainderSeconds,
+          );
 
           if (minutesToAdd > 0) {
-            _showSnack(messenger, 'Added $minutesToAdd minute(s) to "${active.title}".');
+            _snack(messenger,
+                'Added $minutesToAdd minute(s) to "${active.title}".');
           } else {
-            _showSnack(messenger, 'Saved ${remainderSeconds}s for "${active.title}".');
+            _snack(
+                messenger, 'Saved ${remainderSeconds}s for "${active.title}".');
           }
         }
 
@@ -132,7 +140,8 @@ class PrayNowScreen extends StatelessWidget {
               Center(
                 child: Text(
                   _timerText(elapsed),
-                  style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                      fontSize: 42, fontWeight: FontWeight.w700),
                 ),
               ),
               const SizedBox(height: 12),
@@ -170,20 +179,21 @@ class PrayNowScreen extends StatelessWidget {
               else
                 ...sorted.map((p) {
                   final isSelected = (s.activeProjectId == p.id);
-                  final isUpcoming = p.statusLabel == 'Upcoming';
+                  final isUpcoming = _isUpcoming(p);
 
                   return Card(
                     child: ListTile(
                       title: Text(p.title),
-                      subtitle: Text('${p.statusLabel} • ${p.targetHours}h target'),
+                      subtitle:
+                          Text('${p.statusLabel} • ${p.targetHours}h target'),
                       trailing: isSelected
                           ? const Icon(Icons.check_circle)
-                          : (isUpcoming ? const Icon(Icons.lock_outline) : null),
+                          : (isUpcoming
+                              ? const Icon(Icons.lock_outline)
+                              : null),
                       onTap: () async {
-                        final messenger = ScaffoldMessenger.of(context);
-
                         if (!_canTapProject(s, p)) {
-                          _showSnack(
+                          _snack(
                             messenger,
                             isUpcoming
                                 ? 'This project starts later. You can pray on the start date.'
@@ -198,7 +208,8 @@ class PrayNowScreen extends StatelessWidget {
                         );
 
                         if (!ok) {
-                          _showSnack(messenger, 'Stop the timer to switch project.');
+                          _snack(
+                              messenger, 'Stop the timer to switch project.');
                         }
                       },
                     ),
