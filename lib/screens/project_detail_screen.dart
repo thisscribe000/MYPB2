@@ -5,7 +5,7 @@ import '../services/prayer_session.dart';
 class ProjectDetailScreen extends StatefulWidget {
   final PrayerProject project;
 
-  /// ✅ pass the full projects list so we can persist properly
+  /// pass the full projects list so we can persist Stop & Add properly
   final List<PrayerProject> projects;
 
   final PrayerSessionController session;
@@ -38,6 +38,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  String _dayProgressLabel(PrayerProject p) {
+    final d = p.dayNumberFor(DateTime.now());
+    if (d == 0) return 'Upcoming';
+    if (d == p.durationDays + 1) return 'Schedule ended';
+    return 'Day $d/${p.durationDays}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final project = widget.project;
@@ -49,6 +56,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         final isActiveProject = (s.activeProjectId == project.id);
         final hasSomeOtherActive =
             (s.activeProjectId != null && s.activeProjectId != project.id);
+
         final elapsed = widget.session.displayedElapsedSeconds;
 
         Future<void> stopAndAddHere() async {
@@ -58,7 +66,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           final minutesToAdd = seconds ~/ 60;
           final remainderSeconds = seconds % 60;
 
-          // ✅ update the project in the shared list and persist
+          // update the project in the shared list and persist
           final updated = [...widget.projects];
           final idx = updated.indexWhere((p) => p.id == project.id);
           if (idx == -1) return;
@@ -71,7 +79,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
           await widget.onProjectsUpdated(updated);
 
-          // ✅ keep selected and show correct remainder seconds immediately
+          // keep selected and show correct remainder seconds immediately
           await widget.session.selectProject(
             project.id,
             initialElapsedSeconds: remainderSeconds,
@@ -90,6 +98,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             padding: const EdgeInsets.all(16),
             child: ListView(
               children: [
+                // ✅ Header card with Day + Daily target restored
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(12),
@@ -97,23 +106,34 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '${project.statusLabel} • Target ${project.targetHours}h',
+                          '${project.statusLabel} • ${_dayProgressLabel(project)}',
                           style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Target: ${project.targetHours}h • Daily: ${project.dailyTargetHours.toStringAsFixed(1)}h/day',
                         ),
                         const SizedBox(height: 10),
                         LinearProgressIndicator(value: project.progress),
+                        const SizedBox(height: 6),
+                        Text('${(project.progress * 100).toStringAsFixed(0)}% complete'),
                       ],
                     ),
                   ),
                 ),
+
                 const SizedBox(height: 16),
+
+                // Timer card
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(14),
                     child: Column(
                       children: [
                         Text(
-                          _timerText(isActiveProject ? elapsed : project.carrySeconds),
+                          _timerText(
+                            isActiveProject ? elapsed : project.carrySeconds,
+                          ),
                           style: const TextStyle(
                             fontSize: 34,
                             fontWeight: FontWeight.w700,

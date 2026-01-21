@@ -7,6 +7,7 @@ import 'pray_now_screen.dart';
 import 'projects_tab.dart';
 import 'analytics_screen.dart';
 import 'settings_screen.dart';
+import 'add_project_screen.dart';
 
 class AppShell extends StatefulWidget {
   final PrayerSessionController session;
@@ -53,6 +54,21 @@ class _AppShellState extends State<AppShell> {
     return 'Settings';
   }
 
+  void _openAddProjectFromProjects() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddProjectScreen(
+          onAdd: (project) async {
+            final updated = [..._projects, project];
+            await _updateProjects(updated);
+          },
+          fromPrayNow: false,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
@@ -67,7 +83,11 @@ class _AppShellState extends State<AppShell> {
         onProjectsUpdated: _updateProjects,
       ),
       AnalyticsScreen(projects: _projects),
-      const SettingsScreen(),
+      SettingsScreen(
+  projects: _projects,
+  onProjectsUpdated: _updateProjects,
+),
+
     ];
 
     return Scaffold(
@@ -78,7 +98,14 @@ class _AppShellState extends State<AppShell> {
           ? const Center(child: CircularProgressIndicator())
           : pages[_index],
 
-      // ✅ Material 3 bottom nav (more reliable with useMaterial3)
+      // ✅ Bring back the floating + button only on Projects tab
+      floatingActionButton: (_index == 1)
+          ? FloatingActionButton(
+              onPressed: _openAddProjectFromProjects,
+              child: const Icon(Icons.add),
+            )
+          : null,
+
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),

@@ -4,9 +4,6 @@ import '../models/prayer_project.dart';
 
 class AddProjectScreen extends StatefulWidget {
   final void Function(PrayerProject project) onAdd;
-
-  /// If true, after saving we pop back to Pray Now flow.
-  /// (We’ll wire this when we add the Pray Now FAB.)
   final bool fromPrayNow;
 
   const AddProjectScreen({
@@ -44,15 +41,27 @@ class _AddProjectScreenState extends State<AddProjectScreen> {
     final picked = await showDatePicker(
       context: context,
       initialDate: _startDate.isBefore(today) ? today : _startDate,
-      firstDate: today, // ✅ blocks past dates
+      firstDate: today,
       lastDate: DateTime(today.year + 5),
     );
 
     if (picked != null) {
-      setState(() {
-        _startDate = _dateOnly(picked);
-      });
+      setState(() => _startDate = _dateOnly(picked));
     }
+  }
+
+  String _fmtDate(DateTime d) {
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
+    final yyyy = d.year.toString();
+    return '$dd-$mm-$yyyy';
+  }
+
+  double _dailyTargetPreview() {
+    final h = int.tryParse(_targetHoursCtrl.text.trim());
+    final d = int.tryParse(_daysCtrl.text.trim());
+    if (h == null || d == null || h <= 0 || d <= 0) return 0;
+    return h / d;
   }
 
   void _save() {
@@ -73,21 +82,13 @@ class _AddProjectScreenState extends State<AddProjectScreen> {
     );
 
     widget.onAdd(project);
-
-    // ✅ If user came from Pray Now, we just pop back.
-    // (Pray Now will already be in the stack.)
     Navigator.pop(context);
-  }
-
-  String _fmtDate(DateTime d) {
-    final dd = d.day.toString().padLeft(2, '0');
-    final mm = d.month.toString().padLeft(2, '0');
-    final yyyy = d.year.toString();
-    return '$dd-$mm-$yyyy';
   }
 
   @override
   Widget build(BuildContext context) {
+    final dailyPreview = _dailyTargetPreview();
+
     return Scaffold(
       appBar: AppBar(title: const Text('Add Project')),
       body: Padding(
@@ -109,6 +110,7 @@ class _AddProjectScreenState extends State<AddProjectScreen> {
                   if (t.length < 2) return 'Title is too short';
                   return null;
                 },
+                onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 12),
 
@@ -128,6 +130,7 @@ class _AddProjectScreenState extends State<AddProjectScreen> {
                   if (n <= 0) return 'Must be greater than 0';
                   return null;
                 },
+                onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 12),
 
@@ -148,8 +151,21 @@ class _AddProjectScreenState extends State<AddProjectScreen> {
                   if (n > 3650) return 'Too long (max 3650 days)';
                   return null;
                 },
+                onChanged: (_) => setState(() {}),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+
+              // ✅ Daily target restored
+              if (dailyPreview > 0)
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.calculate),
+                    title: const Text('Daily target'),
+                    subtitle: Text('${dailyPreview.toStringAsFixed(2)} hours/day'),
+                  ),
+                ),
+
+              const SizedBox(height: 12),
 
               Card(
                 child: ListTile(
@@ -159,6 +175,7 @@ class _AddProjectScreenState extends State<AddProjectScreen> {
                   onTap: _pickStartDate,
                 ),
               ),
+
               const SizedBox(height: 20),
 
               ElevatedButton.icon(
@@ -166,10 +183,10 @@ class _AddProjectScreenState extends State<AddProjectScreen> {
                 icon: const Icon(Icons.save),
                 label: const Text('Save Project'),
               ),
-              const SizedBox(height: 10),
 
+              const SizedBox(height: 10),
               const Text(
-                'Note: Start date can only be today or later.',
+                'Start date can only be today or later.',
                 style: TextStyle(color: Colors.grey),
               ),
             ],
