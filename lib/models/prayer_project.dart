@@ -33,10 +33,15 @@ class PrayerProject {
   /// Used for sorting on Pray Now
   DateTime? lastPrayedAt;
 
-  /// Hidden leftover seconds (0-59) so timer can resume precisely
-  int carrySeconds;
-
+  /// Notes grouped by day number (1..durationDays)
   Map<int, List<PrayerNote>> dayNotes;
+
+  /// Days where we have logged prayer time (timer or manual/retro add).
+  /// Used to control note dropdown options.
+  Set<int> prayedDays;
+
+  /// leftover seconds after Stop & Add
+  int carrySeconds;
 
   PrayerProject({
     required this.id,
@@ -46,9 +51,11 @@ class PrayerProject {
     required this.plannedStartDate,
     this.totalMinutesPrayed = 0,
     this.lastPrayedAt,
-    this.carrySeconds = 0,
     Map<int, List<PrayerNote>>? dayNotes,
-  }) : dayNotes = dayNotes ?? {};
+    Set<int>? prayedDays,
+    this.carrySeconds = 0,
+  })  : dayNotes = dayNotes ?? {},
+        prayedDays = prayedDays ?? {};
 
   DateTime get endDate =>
       plannedStartDate.add(Duration(days: durationDays - 1));
@@ -112,6 +119,16 @@ class PrayerProject {
     durationDays += extraDays;
   }
 
+  void markDayPrayed(int dayNumber) {
+    if (dayNumber < 1 || dayNumber > durationDays) return;
+    prayedDays.add(dayNumber);
+  }
+
+  List<int> get availableNoteDays {
+    final list = prayedDays.toList()..sort((a, b) => b.compareTo(a));
+    return list;
+  }
+
   Map<String, dynamic> toMap() {
     final notesMap = <String, dynamic>{};
     dayNotes.forEach((day, notes) {
@@ -126,8 +143,9 @@ class PrayerProject {
       'plannedStartDate': plannedStartDate.toIso8601String(),
       'totalMinutesPrayed': totalMinutesPrayed,
       'lastPrayedAt': lastPrayedAt?.toIso8601String(),
-      'carrySeconds': carrySeconds,
       'dayNotes': notesMap,
+      'prayedDays': prayedDays.toList(),
+      'carrySeconds': carrySeconds,
     };
   }
 
@@ -146,14 +164,6 @@ class PrayerProject {
       lastPrayedAt = DateTime.tryParse(map['lastPrayedAt'] as String);
     }
 
-    final carrySecondsRaw = map['carrySeconds'];
-    int carrySeconds = 0;
-    if (carrySecondsRaw is int) {
-      carrySeconds = carrySecondsRaw.clamp(0, 59);
-    } else if (carrySecondsRaw is double) {
-      carrySeconds = carrySecondsRaw.toInt().clamp(0, 59);
-    }
-
     final Map<int, List<PrayerNote>> parsedDayNotes = {};
     final rawDayNotes = map['dayNotes'];
 
@@ -163,8 +173,9 @@ class PrayerProject {
         if (day == null) return;
         if (v is List) {
           parsedDayNotes[day] = v
-              .map((item) =>
-                  PrayerNote.fromMap(Map<String, dynamic>.from(item)))
+              .map(
+                (item) => PrayerNote.fromMap(Map<String, dynamic>.from(item)),
+              )
               .toList();
         }
       });
@@ -181,6 +192,15 @@ class PrayerProject {
       }
     }
 
+    final Set<int> parsedPrayedDays = {};
+    final rawPrayed = map['prayedDays'];
+    if (rawPrayed is List) {
+      for (final item in rawPrayed) {
+        final n = int.tryParse(item.toString());
+        if (n != null) parsedPrayedDays.add(n);
+      }
+    }
+
     return PrayerProject(
       id: map['id'] as String,
       title: map['title'] as String,
@@ -189,8 +209,9 @@ class PrayerProject {
       plannedStartDate: plannedStart,
       totalMinutesPrayed: (map['totalMinutesPrayed'] as int?) ?? 0,
       lastPrayedAt: lastPrayedAt,
-      carrySeconds: carrySeconds,
       dayNotes: parsedDayNotes,
+      prayedDays: parsedPrayedDays,
+      carrySeconds: (map['carrySeconds'] as int?) ?? 0,
     );
   }
 }
