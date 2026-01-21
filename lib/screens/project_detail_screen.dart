@@ -66,7 +66,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final project = widget.project;
+    final liveProject = widget.projects
+    .firstWhere((p) => p.id == widget.project.id, orElse: () => widget.project);
+final project = liveProject;
+
 
     return AnimatedBuilder(
       animation: widget.session,

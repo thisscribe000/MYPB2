@@ -200,7 +200,7 @@ class PrayerProject {
         if (n != null) parsedPrayedDays.add(n);
       }
     }
-
+    
     return PrayerProject(
       id: map['id'] as String,
       title: map['title'] as String,
