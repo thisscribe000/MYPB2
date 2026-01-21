@@ -39,12 +39,18 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
-  /// ✅ Single source of truth update
   Future<void> _updateProjects(List<PrayerProject> updated) async {
     await ProjectStorage.saveProjects(updated);
     setState(() {
       _projects = updated;
     });
+  }
+
+  String _titleForIndex(int i) {
+    if (i == 0) return 'Pray Now';
+    if (i == 1) return 'Projects';
+    if (i == 2) return 'Analytics';
+    return 'Settings';
   }
 
   @override
@@ -60,44 +66,41 @@ class _AppShellState extends State<AppShell> {
         session: widget.session,
         onProjectsUpdated: _updateProjects,
       ),
-      AnalyticsScreen(
-        projects: _projects,
-      ),
+      AnalyticsScreen(projects: _projects),
       const SettingsScreen(),
     ];
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          switch (_index) {
-            0 => 'Pray Now',
-            1 => 'Projects',
-            2 => 'Analytics',
-            _ => 'Settings',
-          },
-        ),
+        title: Text(_titleForIndex(_index)),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : pages[_index],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _index,
-        onTap: (i) => setState(() => _index = i),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.timer),
+
+      // ✅ Material 3 bottom nav (more reliable with useMaterial3)
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _index,
+        onDestinationSelected: (i) => setState(() => _index = i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.timer_outlined),
+            selectedIcon: Icon(Icons.timer),
             label: 'Pray Now',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.list_alt),
+          NavigationDestination(
+            icon: Icon(Icons.list_alt_outlined),
+            selectedIcon: Icon(Icons.list_alt),
             label: 'Projects',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.bar_chart),
+          NavigationDestination(
+            icon: Icon(Icons.bar_chart_outlined),
+            selectedIcon: Icon(Icons.bar_chart),
             label: 'Analytics',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
             label: 'Settings',
           ),
         ],
