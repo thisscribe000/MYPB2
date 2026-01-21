@@ -67,7 +67,7 @@ class PrayNowScreen extends StatelessWidget {
     return AnimatedBuilder(
       animation: session,
       builder: (context, _) {
-        final messenger = ScaffoldMessenger.of(context); // ✅ capture once
+        final messenger = ScaffoldMessenger.of(context);
 
         final s = session.state;
         final active = _findProject(s.activeProjectId);
@@ -85,15 +85,24 @@ class PrayNowScreen extends StatelessWidget {
           final idx = updated.indexWhere((p) => p.id == active.id);
           if (idx == -1) return;
 
+          // ✅ mark prayed day if ANY time was recorded
+          final todayDay = updated[idx].dayNumberFor(DateTime.now());
+          if (seconds > 0 &&
+              todayDay >= 1 &&
+              todayDay <= updated[idx].durationDays) {
+            updated[idx].markDayPrayed(todayDay);
+          }
+
           if (minutesToAdd > 0) {
             updated[idx].totalMinutesPrayed += minutesToAdd;
           }
+
           updated[idx].carrySeconds = remainderSeconds;
           updated[idx].lastPrayedAt = DateTime.now();
 
           await onProjectsUpdated(updated);
 
-          // ✅ After saving, keep selected and show remainder precisely
+          // keep selected and show correct remainder precisely
           await session.selectProject(
             active.id,
             initialElapsedSeconds: remainderSeconds,
