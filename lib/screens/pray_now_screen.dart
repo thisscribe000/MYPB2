@@ -23,6 +23,15 @@ class PrayNowScreen extends StatelessWidget {
     return '${_fmt2(h)}:${_fmt2(m)}:${_fmt2(s)}';
   }
 
+  DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  String _fmtDDMMYYYY(DateTime d) {
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
+    final yyyy = d.year.toString();
+    return '$dd-$mm-$yyyy';
+  }
+
   PrayerProject? _findProject(String? id) {
     if (id == null) return null;
     for (final p in projects) {
@@ -60,6 +69,185 @@ class PrayNowScreen extends StatelessWidget {
     return true;
   }
 
+  Future<void> _showManualAddDialog(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final s = session.state;
+
+    // ✅ do not allow manual add while running (so no surprises)
+    if (s.isRunning) {
+      _snack(messenger, 'Pause or stop the timer before adding time manually.');
+      return;
+    }
+
+    if (projects.isEmpty) {
+      _snack(messenger, 'No projects yet.');
+      return;
+    }
+
+    // Prefer currently selected project if any, else first non-upcoming project
+    PrayerProject? selected = _findProject(s.activeProjectId);
+    selected ??= projects.firstWhere(
+      (p) => !_isUpcoming(p),
+      orElse: () => projects.first,
+    );
+
+    // If selected is upcoming, switch to first non-upcoming if possible
+    if (_isUpcoming(selected)) {
+      final nonUpcoming = projects.where((p) => !_isUpcoming(p)).toList();
+      if (nonUpcoming.isEmpty) {
+        _snack(messenger, 'All projects are upcoming. You can add time on the start date.');
+        return;
+      }
+      selected = nonUpcoming.first;
+    }
+
+    String chosenProjectId = selected.id;
+
+    // Day selection: only up to "today's day number" within schedule
+    int maxDayForProject(PrayerProject p) {
+      final d = p.dayNumberFor(DateTime.now());
+      if (d <= 0) return 0;
+      if (d > p.durationDays) return p.durationDays;
+      return d;
+    }
+
+    int chosenMinutes = 15;
+    int chosenDay = maxDayForProject(selected);
+    if (chosenDay < 1) chosenDay = 1;
+
+    DateTime dateForDay(PrayerProject p, int day) =>
+        _dateOnly(p.plannedStartDate).add(Duration(days: day - 1));
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) {
+        return AlertDialog(
+          title: const Text('Add time manually'),
+          content: StatefulBuilder(
+            builder: (context, setLocal) {
+              final p = projects.firstWhere((x) => x.id == chosenProjectId);
+              final maxDay = maxDayForProject(p);
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownMenu<String>(
+                    initialSelection: chosenProjectId,
+                    expandedInsets: EdgeInsets.zero,
+                    label: const Text('Project'),
+                    dropdownMenuEntries: projects
+                        .map(
+                          (proj) => DropdownMenuEntry(
+                            value: proj.id,
+                            label: proj.title,
+                            enabled: !_isUpcoming(proj), // ✅ upcoming locked
+                          ),
+                        )
+                        .toList(),
+                    onSelected: (v) {
+                      if (v == null) return;
+                      final proj = projects.firstWhere((x) => x.id == v);
+                      if (_isUpcoming(proj)) return;
+
+                      setLocal(() {
+                        chosenProjectId = v;
+                        final newMax = maxDayForProject(proj);
+                        chosenDay = newMax >= 1 ? newMax : 1;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  DropdownMenu<int>(
+                    initialSelection: chosenMinutes,
+                    expandedInsets: EdgeInsets.zero,
+                    label: const Text('Minutes'),
+                    dropdownMenuEntries: List.generate(24, (i) => (i + 1) * 15)
+                        .map(
+                          (m) => DropdownMenuEntry(
+                            value: m,
+                            label: '$m minutes',
+                          ),
+                        )
+                        .toList(),
+                    onSelected: (v) {
+                      if (v == null) return;
+                      setLocal(() => chosenMinutes = v);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  if (maxDay < 1)
+                    const Text(
+                      'This project has not started yet.',
+                      style: TextStyle(color: Colors.grey),
+                    )
+                  else
+                    DropdownMenu<int>(
+                      initialSelection: chosenDay.clamp(1, maxDay),
+                      expandedInsets: EdgeInsets.zero,
+                      label: const Text('Day'),
+                      dropdownMenuEntries: List.generate(maxDay, (i) => i + 1)
+                          .reversed
+                          .map((d) {
+                        final date = dateForDay(p, d);
+                        return DropdownMenuEntry(
+                          value: d,
+                          label: '${_fmtDDMMYYYY(date)} (Day $d)',
+                        );
+                      }).toList(),
+                      onSelected: (v) {
+                        if (v == null) return;
+                        setLocal(() => chosenDay = v);
+                      },
+                    ),
+                ],
+              );
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (ok != true) return;
+
+    // Apply the manual log
+    final updated = [...projects];
+    final idx = updated.indexWhere((p) => p.id == chosenProjectId);
+    if (idx == -1) return;
+
+    // block if upcoming (extra safety)
+    if (_isUpcoming(updated[idx])) {
+      _snack(messenger, 'You can’t add time until the start date.');
+      return;
+    }
+
+    // clamp day for safety
+    final maxDay = maxDayForProject(updated[idx]);
+    final safeDay = chosenDay.clamp(1, maxDay >= 1 ? maxDay : 1);
+
+    updated[idx].totalMinutesPrayed += chosenMinutes;
+    updated[idx].markDayPrayed(safeDay);
+    updated[idx].lastPrayedAt = DateTime.now();
+
+    await onProjectsUpdated(updated);
+
+    _snack(
+      messenger,
+      'Added $chosenMinutes min to "${updated[idx].title}" • Day $safeDay',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final sorted = _sortedProjects();
@@ -71,7 +259,6 @@ class PrayNowScreen extends StatelessWidget {
 
         final s = session.state;
         final active = _findProject(s.activeProjectId);
-
         final elapsed = (active == null) ? 0 : session.displayedElapsedSeconds;
 
         Future<void> stopAndAdd() async {
@@ -85,11 +272,8 @@ class PrayNowScreen extends StatelessWidget {
           final idx = updated.indexWhere((p) => p.id == active.id);
           if (idx == -1) return;
 
-          // ✅ mark prayed day if ANY time was recorded
           final todayDay = updated[idx].dayNumberFor(DateTime.now());
-          if (seconds > 0 &&
-              todayDay >= 1 &&
-              todayDay <= updated[idx].durationDays) {
+          if (seconds > 0 && todayDay >= 1 && todayDay <= updated[idx].durationDays) {
             updated[idx].markDayPrayed(todayDay);
           }
 
@@ -102,18 +286,15 @@ class PrayNowScreen extends StatelessWidget {
 
           await onProjectsUpdated(updated);
 
-          // keep selected and show correct remainder precisely
           await session.selectProject(
             active.id,
             initialElapsedSeconds: remainderSeconds,
           );
 
           if (minutesToAdd > 0) {
-            _snack(messenger,
-                'Added $minutesToAdd minute(s) to "${active.title}".');
+            _snack(messenger, 'Added $minutesToAdd minute(s) to "${active.title}".');
           } else {
-            _snack(
-                messenger, 'Saved ${remainderSeconds}s for "${active.title}".');
+            _snack(messenger, 'Saved ${remainderSeconds}s for "${active.title}".');
           }
         }
 
@@ -146,11 +327,23 @@ class PrayNowScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 18),
+
+              // ✅ Manual add button (restored)
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  onPressed: () => _showManualAddDialog(context),
+                  icon: const Icon(Icons.edit_calendar),
+                  label: const Text('Add time manually'),
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
               Center(
                 child: Text(
                   _timerText(elapsed),
-                  style: const TextStyle(
-                      fontSize: 42, fontWeight: FontWeight.w700),
+                  style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w700),
                 ),
               ),
               const SizedBox(height: 12),
@@ -193,13 +386,10 @@ class PrayNowScreen extends StatelessWidget {
                   return Card(
                     child: ListTile(
                       title: Text(p.title),
-                      subtitle:
-                          Text('${p.statusLabel} • ${p.targetHours}h target'),
+                      subtitle: Text('${p.statusLabel} • ${p.targetHours}h target'),
                       trailing: isSelected
                           ? const Icon(Icons.check_circle)
-                          : (isUpcoming
-                              ? const Icon(Icons.lock_outline)
-                              : null),
+                          : (isUpcoming ? const Icon(Icons.lock_outline) : null),
                       onTap: () async {
                         if (!_canTapProject(s, p)) {
                           _snack(
@@ -217,8 +407,7 @@ class PrayNowScreen extends StatelessWidget {
                         );
 
                         if (!ok) {
-                          _snack(
-                              messenger, 'Stop the timer to switch project.');
+                          _snack(messenger, 'Stop the timer to switch project.');
                         }
                       },
                     ),
