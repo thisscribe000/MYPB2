@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
-import 'dart:math';
 import '../models/prayer_project.dart';
 
 class AddProjectScreen extends StatefulWidget {
-  final void Function(PrayerProject project) onAdd;
-  final bool fromPrayNow;
+  final Future<void> Function(PrayerProject project) onAdd;
 
   const AddProjectScreen({
     super.key,
     required this.onAdd,
-    this.fromPrayNow = false,
   });
 
   @override
@@ -21,80 +18,102 @@ class _AddProjectScreenState extends State<AddProjectScreen> {
 
   final _titleCtrl = TextEditingController();
   final _targetHoursCtrl = TextEditingController();
-  final _daysCtrl = TextEditingController();
+  final _durationDaysCtrl = TextEditingController();
 
-  DateTime _startDate = _dateOnly(DateTime.now());
-
-  static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+  DateTime _plannedStartDate = DateTime.now();
 
   @override
   void dispose() {
     _titleCtrl.dispose();
     _targetHoursCtrl.dispose();
-    _daysCtrl.dispose();
+    _durationDaysCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _pickStartDate() async {
-    final today = _dateOnly(DateTime.now());
+  DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _startDate.isBefore(today) ? today : _startDate,
-      firstDate: today,
-      lastDate: DateTime(today.year + 5),
-    );
-
-    if (picked != null) {
-      setState(() => _startDate = _dateOnly(picked));
-    }
-  }
-
-  String _fmtDate(DateTime d) {
+  String _fmtDDMMYYYY(DateTime d) {
     final dd = d.day.toString().padLeft(2, '0');
     final mm = d.month.toString().padLeft(2, '0');
     final yyyy = d.year.toString();
     return '$dd-$mm-$yyyy';
   }
 
-  double _dailyTargetPreview() {
-    final h = int.tryParse(_targetHoursCtrl.text.trim());
-    final d = int.tryParse(_daysCtrl.text.trim());
-    if (h == null || d == null || h <= 0 || d <= 0) return 0;
-    return h / d;
+  bool get _isValidNow {
+    final titleOk = _titleCtrl.text.trim().isNotEmpty;
+
+    final target = int.tryParse(_targetHoursCtrl.text.trim());
+    final duration = int.tryParse(_durationDaysCtrl.text.trim());
+
+    final targetOk = target != null && target > 0;
+    final durationOk = duration != null && duration > 0;
+
+    final today = _dateOnly(DateTime.now());
+    final startOk = !_dateOnly(_plannedStartDate).isBefore(today);
+
+    return titleOk && targetOk && durationOk && startOk;
   }
 
-  void _save() {
-    if (!_formKey.currentState!.validate()) return;
+  Future<void> _pickStartDate() async {
+    final today = _dateOnly(DateTime.now());
+    final initial = _dateOnly(_plannedStartDate).isBefore(today)
+        ? today
+        : _dateOnly(_plannedStartDate);
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: today, // ✅ no past dates allowed
+      lastDate: DateTime(today.year + 10),
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      _plannedStartDate = _dateOnly(picked);
+    });
+  }
+
+  Future<void> _save() async {
+    // Run validators
+    final ok = _formKey.currentState?.validate() ?? false;
+    if (!ok) return;
 
     final title = _titleCtrl.text.trim();
     final targetHours = int.parse(_targetHoursCtrl.text.trim());
-    final days = int.parse(_daysCtrl.text.trim());
+    final durationDays = int.parse(_durationDaysCtrl.text.trim());
 
-    final id = Random().nextInt(999999).toString();
+    final id = DateTime.now().microsecondsSinceEpoch.toString();
 
     final project = PrayerProject(
       id: id,
       title: title,
       targetHours: targetHours,
-      durationDays: days,
-      plannedStartDate: _startDate,
+      durationDays: durationDays,
+      plannedStartDate: _dateOnly(_plannedStartDate),
     );
 
-    widget.onAdd(project);
-    Navigator.pop(context);
+    await widget.onAdd(project);
+
+    if (!mounted) return;
+    // Don’t pop here, because AppShell’s onAdd already pops the route.
+    // If you later reuse this screen elsewhere, this still stays safe.
   }
 
   @override
   Widget build(BuildContext context) {
-    final dailyPreview = _dailyTargetPreview();
+    final today = _dateOnly(DateTime.now());
+    final startIsPast = _dateOnly(_plannedStartDate).isBefore(today);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Add Project')),
+      appBar: AppBar(
+        title: const Text('Add Project'),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
+          onChanged: () => setState(() {}),
           child: ListView(
             children: [
               TextFormField(
@@ -105,89 +124,73 @@ class _AddProjectScreenState extends State<AddProjectScreen> {
                 ),
                 textInputAction: TextInputAction.next,
                 validator: (v) {
-                  final t = (v ?? '').trim();
-                  if (t.isEmpty) return 'Title is required';
-                  if (t.length < 2) return 'Title is too short';
+                  if (v == null || v.trim().isEmpty) {
+                    return 'Title is required';
+                  }
                   return null;
                 },
-                onChanged: (_) => setState(() {}),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
 
               TextFormField(
                 controller: _targetHoursCtrl,
                 decoration: const InputDecoration(
-                  labelText: 'Target hours (e.g. 50)',
+                  labelText: 'Target hours',
+                  hintText: 'e.g. 50',
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,
                 textInputAction: TextInputAction.next,
                 validator: (v) {
-                  final t = (v ?? '').trim();
-                  if (t.isEmpty) return 'Target hours is required';
-                  final n = int.tryParse(t);
-                  if (n == null) return 'Enter a valid number';
-                  if (n <= 0) return 'Must be greater than 0';
+                  final n = int.tryParse((v ?? '').trim());
+                  if (n == null || n <= 0) return 'Enter a valid number > 0';
                   return null;
                 },
-                onChanged: (_) => setState(() {}),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
 
               TextFormField(
-                controller: _daysCtrl,
+                controller: _durationDaysCtrl,
                 decoration: const InputDecoration(
-                  labelText: 'Duration (days) (e.g. 10)',
+                  labelText: 'Number of days',
+                  hintText: 'e.g. 10',
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,
                 textInputAction: TextInputAction.done,
                 validator: (v) {
-                  final t = (v ?? '').trim();
-                  if (t.isEmpty) return 'Duration days is required';
-                  final n = int.tryParse(t);
-                  if (n == null) return 'Enter a valid number';
-                  if (n <= 0) return 'Must be greater than 0';
-                  if (n > 3650) return 'Too long (max 3650 days)';
+                  final n = int.tryParse((v ?? '').trim());
+                  if (n == null || n <= 0) return 'Enter a valid number > 0';
                   return null;
                 },
-                onChanged: (_) => setState(() {}),
               ),
-              const SizedBox(height: 12),
-
-              // ✅ Daily target restored
-              if (dailyPreview > 0)
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.calculate),
-                    title: const Text('Daily target'),
-                    subtitle: Text('${dailyPreview.toStringAsFixed(2)} hours/day'),
-                  ),
-                ),
-
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
 
               Card(
                 child: ListTile(
-                  title: const Text('Start date'),
-                  subtitle: Text('${_fmtDate(_startDate)} (Day 1)'),
-                  trailing: const Icon(Icons.calendar_month),
+                  leading: const Icon(Icons.date_range),
+                  title: const Text('Planned start date'),
+                  subtitle: Text(_fmtDDMMYYYY(_plannedStartDate)),
+                  trailing: const Icon(Icons.edit),
                   onTap: _pickStartDate,
                 ),
               ),
 
-              const SizedBox(height: 20),
+              if (startIsPast)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Start date cannot be in the past.',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                ),
+
+              const SizedBox(height: 18),
 
               ElevatedButton.icon(
-                onPressed: _save,
+                onPressed: _isValidNow ? _save : null,
                 icon: const Icon(Icons.save),
-                label: const Text('Save Project'),
-              ),
-
-              const SizedBox(height: 10),
-              const Text(
-                'Start date can only be today or later.',
-                style: TextStyle(color: Colors.grey),
+                label: const Text('Save project'),
               ),
             ],
           ),
