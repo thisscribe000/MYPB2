@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/prayer_project.dart';
 import '../services/prayer_session.dart';
-import 'add_project_screen.dart';
 import 'project_detail_screen.dart';
 
 class ProjectsTab extends StatelessWidget {
@@ -15,6 +14,9 @@ class ProjectsTab extends StatelessWidget {
     required this.session,
     required this.onProjectsUpdated,
   });
+
+  // ---- KEEP THE REST OF YOUR FILE BELOW THIS LINE AS-IS ----
+
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -40,30 +42,7 @@ class ProjectsTab extends StatelessWidget {
 
   bool _isUpcoming(PrayerProject p) => p.dayNumberFor(DateTime.now()) == 0;
 
-  Future<void> _openAddProject(BuildContext context) async {
-  await Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => AddProjectScreen(
-        onAdd: (PrayerProject newProject) async {
-  final nav = Navigator.of(context);
-
-  final updated = [...projects, newProject];
-  await onProjectsUpdated(updated);
-
-  // optional: preselect but do NOT start timer
-  await session.selectProject(
-    newProject.id,
-    initialElapsedSeconds: 0,
-  );
-
-  nav.pop();
-},
-
-      ),
-    ),
-  );
-}
+  
 
 
   @override
@@ -146,10 +125,7 @@ class ProjectsTab extends StatelessWidget {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openAddProject(context),
-        child: const Icon(Icons.add),
-      ),
+      
     );
   }
 }

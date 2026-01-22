@@ -34,36 +34,41 @@ class _AppShellState extends State<AppShell> {
 
   Future<void> _loadProjects() async {
     final loaded = await ProjectStorage.loadProjects();
+    if (!mounted) return;
     setState(() {
       _projects = loaded;
       _isLoading = false;
     });
   }
 
+  /// ✅ Single source of truth update
   Future<void> _updateProjects(List<PrayerProject> updated) async {
     await ProjectStorage.saveProjects(updated);
+    if (!mounted) return;
     setState(() {
       _projects = updated;
     });
   }
 
-  String _titleForIndex(int i) {
-    if (i == 0) return 'Pray Now';
-    if (i == 1) return 'Projects';
-    if (i == 2) return 'Analytics';
-    return 'Settings';
-  }
+  Future<void> _openAddProject() async {
+    final nav = Navigator.of(context);
 
-  void _openAddProjectFromProjects() {
-    Navigator.push(
-      context,
+    await nav.push(
       MaterialPageRoute(
         builder: (_) => AddProjectScreen(
-          onAdd: (project) async {
-            final updated = [..._projects, project];
+          onAdd: (PrayerProject newProject) async {
+            final nav2 = Navigator.of(context);
+
+            final updated = [..._projects, newProject];
             await _updateProjects(updated);
+
+            await widget.session.selectProject(
+              newProject.id,
+              initialElapsedSeconds: 0,
+            );
+
+            nav2.pop();
           },
-          fromPrayNow: false,
         ),
       ),
     );
@@ -83,51 +88,49 @@ class _AppShellState extends State<AppShell> {
         onProjectsUpdated: _updateProjects,
       ),
       AnalyticsScreen(projects: _projects),
-      SettingsScreen(
-  projects: _projects,
-  onProjectsUpdated: _updateProjects,
-),
-
+      const SettingsScreen(),
     ];
+
+    final showFab = _index != 3; // hide on Settings
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_titleForIndex(_index)),
+        title: Text(
+          switch (_index) {
+            0 => 'Pray Now',
+            1 => 'Projects',
+            2 => 'Analytics',
+            _ => 'Settings',
+          },
+        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : pages[_index],
-
-      // ✅ Bring back the floating + button only on Projects tab
-      floatingActionButton: (_index == 1)
+      floatingActionButton: showFab
           ? FloatingActionButton(
-              onPressed: _openAddProjectFromProjects,
+              onPressed: _openAddProject,
               child: const Icon(Icons.add),
             )
           : null,
-
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.timer_outlined),
-            selectedIcon: Icon(Icons.timer),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _index,
+        onTap: (i) => setState(() => _index = i),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.timer),
             label: 'Pray Now',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.list_alt_outlined),
-            selectedIcon: Icon(Icons.list_alt),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.list_alt),
             label: 'Projects',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.bar_chart),
             label: 'Analytics',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings),
             label: 'Settings',
           ),
         ],
