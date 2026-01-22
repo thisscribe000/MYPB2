@@ -200,7 +200,12 @@ class PrayerProject {
         if (n != null) parsedPrayedDays.add(n);
       }
     }
-    
+    // ✅ Migration safety: older data may have minutes but no prayedDays
+    if (parsedPrayedDays.isEmpty) {
+  final minutes = (map['totalMinutesPrayed'] as int?) ?? 0;
+  if (minutes > 0) parsedPrayedDays.add(1);
+}
+
     return PrayerProject(
       id: map['id'] as String,
       title: map['title'] as String,
