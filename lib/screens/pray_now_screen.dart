@@ -31,6 +31,18 @@ class PrayNowScreen extends StatelessWidget {
     final yyyy = d.year.toString();
     return '$dd-$mm-$yyyy';
   }
+  String _dayLabel(PrayerProject p) {
+  final d = p.dayNumberFor(DateTime.now());
+  if (d == 0) {
+    final days = p.daysUntilStart(DateTime.now());
+    final safe = days < 0 ? 0 : days;
+    if (safe == 0) return 'Starts today';
+    if (safe == 1) return 'Starts in 1 day';
+    return 'Starts in $safe days';
+  }
+  if (d == p.durationDays + 1) return 'Schedule ended';
+  return 'Day $d/${p.durationDays}';
+}
 
   PrayerProject? _findProject(String? id) {
     if (id == null) return null;
@@ -386,7 +398,12 @@ class PrayNowScreen extends StatelessWidget {
                   return Card(
                     child: ListTile(
                       title: Text(p.title),
-                      subtitle: Text('${p.statusLabel} • ${p.targetHours}h target'),
+                      subtitle: Text(
+  '${p.statusLabel} • ${_dayLabel(p)}\n'
+  'Target: ${p.targetHours}h • Daily: ${p.dailyTargetHours.toStringAsFixed(1)}h/day',
+),
+isThreeLine: true,
+
                       trailing: isSelected
                           ? const Icon(Icons.check_circle)
                           : (isUpcoming ? const Icon(Icons.lock_outline) : null),
