@@ -16,37 +16,27 @@ class PrayNowScreen extends StatelessWidget {
 
   String _fmt2(int n) => n.toString().padLeft(2, '0');
 
-String _timerText(int totalSeconds) {
-  final h = totalSeconds ~/ 3600;
-  final m = (totalSeconds % 3600) ~/ 60;
-  final s = totalSeconds % 60;
+  String _timerText(int totalSeconds) {
+    final h = totalSeconds ~/ 3600;
+    final m = (totalSeconds % 3600) ~/ 60;
+    final s = totalSeconds % 60;
 
-  // ✅ Hours can be 1–3+ digits (no padding)
-  // ✅ Minutes/Seconds always 2 digits
-  return '$h:${_fmt2(m)}:${_fmt2(s)}';
-}
-
-
-  DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
-
-  String _fmtDDMMYYYY(DateTime d) {
-    final dd = d.day.toString().padLeft(2, '0');
-    final mm = d.month.toString().padLeft(2, '0');
-    final yyyy = d.year.toString();
-    return '$dd-$mm-$yyyy';
+    // Hours can be 1–3+ digits; minutes/seconds always 2 digits
+    return '$h:${_fmt2(m)}:${_fmt2(s)}';
   }
+
   String _dayLabel(PrayerProject p) {
-  final d = p.dayNumberFor(DateTime.now());
-  if (d == 0) {
-    final days = p.daysUntilStart(DateTime.now());
-    final safe = days < 0 ? 0 : days;
-    if (safe == 0) return 'Starts today';
-    if (safe == 1) return 'Starts in 1 day';
-    return 'Starts in $safe days';
+    final d = p.dayNumberFor(DateTime.now());
+    if (d == 0) {
+      final days = p.daysUntilStart(DateTime.now());
+      final safe = days < 0 ? 0 : days;
+      if (safe == 0) return 'Starts today';
+      if (safe == 1) return 'Starts in 1 day';
+      return 'Starts in $safe days';
+    }
+    if (d == p.durationDays + 1) return 'Schedule ended';
+    return 'Day $d/${p.durationDays}';
   }
-  if (d == p.durationDays + 1) return 'Schedule ended';
-  return 'Day $d/${p.durationDays}';
-}
 
   PrayerProject? _findProject(String? id) {
     if (id == null) return null;
@@ -56,8 +46,10 @@ String _timerText(int totalSeconds) {
     return null;
   }
 
-  List<PrayerProject> _sortedProjects() {
-    final list = [...projects];
+  bool _isUpcoming(PrayerProject p) => p.dayNumberFor(DateTime.now()) == 0;
+
+  List<PrayerProject> _sortedActiveProjects() {
+    final list = projects.where((p) => !_isUpcoming(p)).toList();
     list.sort((a, b) {
       final ad = a.lastPrayedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       final bd = b.lastPrayedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -66,207 +58,33 @@ String _timerText(int totalSeconds) {
     return list;
   }
 
-  bool _isUpcoming(PrayerProject p) => p.dayNumberFor(DateTime.now()) == 0;
-
   void _snack(ScaffoldMessengerState messenger, String msg) {
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(SnackBar(content: Text(msg)));
   }
 
   bool _canTapProject(PrayerSessionState s, PrayerProject p) {
+    // Upcoming never selectable here
     if (_isUpcoming(p)) return false;
 
+    // If no project selected, allow selecting
     if (s.activeProjectId == null) return true;
+
+    // If same project, allow tapping (no-op)
     if (s.activeProjectId == p.id) return true;
 
+    // If running, block switching
     if (s.isRunning) return false;
+
+    // If paused with some time, block switching (protect the session)
     if (s.isPaused && s.elapsedSeconds > 0) return false;
 
     return true;
   }
 
-  Future<void> _showManualAddDialog(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final s = session.state;
-
-    // ✅ do not allow manual add while running (so no surprises)
-    if (s.isRunning) {
-      _snack(messenger, 'Pause or stop the timer before adding time manually.');
-      return;
-    }
-
-    if (projects.isEmpty) {
-      _snack(messenger, 'No projects yet.');
-      return;
-    }
-
-    // Prefer currently selected project if any, else first non-upcoming project
-    PrayerProject? selected = _findProject(s.activeProjectId);
-    selected ??= projects.firstWhere(
-      (p) => !_isUpcoming(p),
-      orElse: () => projects.first,
-    );
-
-    // If selected is upcoming, switch to first non-upcoming if possible
-    if (_isUpcoming(selected)) {
-      final nonUpcoming = projects.where((p) => !_isUpcoming(p)).toList();
-      if (nonUpcoming.isEmpty) {
-        _snack(messenger, 'All projects are upcoming. You can add time on the start date.');
-        return;
-      }
-      selected = nonUpcoming.first;
-    }
-
-    String chosenProjectId = selected.id;
-
-    // Day selection: only up to "today's day number" within schedule
-    int maxDayForProject(PrayerProject p) {
-      final d = p.dayNumberFor(DateTime.now());
-      if (d <= 0) return 0;
-      if (d > p.durationDays) return p.durationDays;
-      return d;
-    }
-
-    int chosenMinutes = 15;
-    int chosenDay = maxDayForProject(selected);
-    if (chosenDay < 1) chosenDay = 1;
-
-    DateTime dateForDay(PrayerProject p, int day) =>
-        _dateOnly(p.plannedStartDate).add(Duration(days: day - 1));
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) {
-        return AlertDialog(
-          title: const Text('Add time manually'),
-          content: StatefulBuilder(
-            builder: (context, setLocal) {
-              final p = projects.firstWhere((x) => x.id == chosenProjectId);
-              final maxDay = maxDayForProject(p);
-
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownMenu<String>(
-                    initialSelection: chosenProjectId,
-                    expandedInsets: EdgeInsets.zero,
-                    label: const Text('Project'),
-                    dropdownMenuEntries: projects
-                        .map(
-                          (proj) => DropdownMenuEntry(
-                            value: proj.id,
-                            label: proj.title,
-                            enabled: !_isUpcoming(proj), // ✅ upcoming locked
-                          ),
-                        )
-                        .toList(),
-                    onSelected: (v) {
-                      if (v == null) return;
-                      final proj = projects.firstWhere((x) => x.id == v);
-                      if (_isUpcoming(proj)) return;
-
-                      setLocal(() {
-                        chosenProjectId = v;
-                        final newMax = maxDayForProject(proj);
-                        chosenDay = newMax >= 1 ? newMax : 1;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-
-                  DropdownMenu<int>(
-                    initialSelection: chosenMinutes,
-                    expandedInsets: EdgeInsets.zero,
-                    label: const Text('Minutes'),
-                    dropdownMenuEntries: List.generate(24, (i) => (i + 1) * 15)
-                        .map(
-                          (m) => DropdownMenuEntry(
-                            value: m,
-                            label: '$m minutes',
-                          ),
-                        )
-                        .toList(),
-                    onSelected: (v) {
-                      if (v == null) return;
-                      setLocal(() => chosenMinutes = v);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-
-                  if (maxDay < 1)
-                    const Text(
-                      'This project has not started yet.',
-                      style: TextStyle(color: Colors.grey),
-                    )
-                  else
-                    DropdownMenu<int>(
-                      initialSelection: chosenDay.clamp(1, maxDay),
-                      expandedInsets: EdgeInsets.zero,
-                      label: const Text('Day'),
-                      dropdownMenuEntries: List.generate(maxDay, (i) => i + 1)
-                          .reversed
-                          .map((d) {
-                        final date = dateForDay(p, d);
-                        return DropdownMenuEntry(
-                          value: d,
-                          label: '${_fmtDDMMYYYY(date)} (Day $d)',
-                        );
-                      }).toList(),
-                      onSelected: (v) {
-                        if (v == null) return;
-                        setLocal(() => chosenDay = v);
-                      },
-                    ),
-                ],
-              );
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Add'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (ok != true) return;
-
-    // Apply the manual log
-    final updated = [...projects];
-    final idx = updated.indexWhere((p) => p.id == chosenProjectId);
-    if (idx == -1) return;
-
-    // block if upcoming (extra safety)
-    if (_isUpcoming(updated[idx])) {
-      _snack(messenger, 'You can’t add time until the start date.');
-      return;
-    }
-
-    // clamp day for safety
-    final maxDay = maxDayForProject(updated[idx]);
-    final safeDay = chosenDay.clamp(1, maxDay >= 1 ? maxDay : 1);
-
-    updated[idx].totalMinutesPrayed += chosenMinutes;
-    updated[idx].markDayPrayed(safeDay);
-    updated[idx].lastPrayedAt = DateTime.now();
-
-    await onProjectsUpdated(updated);
-
-    _snack(
-      messenger,
-      'Added $chosenMinutes min to "${updated[idx].title}" • Day $safeDay',
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final sorted = _sortedProjects();
+    final sorted = _sortedActiveProjects();
 
     return AnimatedBuilder(
       animation: session,
@@ -275,7 +93,18 @@ String _timerText(int totalSeconds) {
 
         final s = session.state;
         final active = _findProject(s.activeProjectId);
+
+        // elapsed = current session value (includes carrySeconds if that’s how your controller is set up)
         final elapsed = (active == null) ? 0 : session.displayedElapsedSeconds;
+
+        // TOTAL = minutes already saved + what is currently on the timer
+        final totalSeconds =
+            (active == null) ? 0 : (active.totalMinutesPrayed * 60) + elapsed;
+
+        // THIS SESSION = elapsed minus carrySeconds (carrySeconds is from last stop)
+        final sessionSeconds = (active == null)
+            ? 0
+            : (elapsed - active.carrySeconds).clamp(0, 999999999);
 
         Future<void> stopAndAdd() async {
           if (active == null) return;
@@ -289,7 +118,9 @@ String _timerText(int totalSeconds) {
           if (idx == -1) return;
 
           final todayDay = updated[idx].dayNumberFor(DateTime.now());
-          if (seconds > 0 && todayDay >= 1 && todayDay <= updated[idx].durationDays) {
+          if (seconds > 0 &&
+              todayDay >= 1 &&
+              todayDay <= updated[idx].durationDays) {
             updated[idx].markDayPrayed(todayDay);
           }
 
@@ -302,16 +133,41 @@ String _timerText(int totalSeconds) {
 
           await onProjectsUpdated(updated);
 
+          // Re-select with only leftover seconds
           await session.selectProject(
             active.id,
             initialElapsedSeconds: remainderSeconds,
           );
 
           if (minutesToAdd > 0) {
-            _snack(messenger, 'Added $minutesToAdd minute(s) to "${active.title}".');
+            _snack(
+              messenger,
+              'Added $minutesToAdd minute(s) to "${active.title}".',
+            );
           } else {
-            _snack(messenger, 'Saved ${remainderSeconds}s for "${active.title}".');
+            _snack(
+              messenger,
+              'Saved ${remainderSeconds}s for "${active.title}".',
+            );
           }
+        }
+
+        // Single main button logic
+        String mainLabel;
+        VoidCallback? mainAction;
+
+        if (active == null) {
+          mainLabel = 'Start';
+          mainAction = null;
+        } else if (s.isRunning) {
+          mainLabel = 'Pause';
+          mainAction = () => session.pause();
+        } else if (s.isPaused) {
+          mainLabel = 'Resume';
+          mainAction = () => session.resume();
+        } else {
+          mainLabel = 'Start';
+          mainAction = () => session.start();
         }
 
         return Padding(
@@ -334,7 +190,9 @@ String _timerText(int totalSeconds) {
                       const SizedBox(height: 6),
                       if (active != null)
                         Text(
-                          '${active.statusLabel} • Target ${active.targetHours}h • ${(active.progress * 100).toStringAsFixed(0)}%',
+                          '${active.statusLabel} • ${_dayLabel(active)} • '
+                          'Target ${active.targetHours}h • '
+                          '${(active.progress * 100).toStringAsFixed(0)}%',
                         )
                       else
                         const Text('Tap a project below to select it.'),
@@ -342,60 +200,44 @@ String _timerText(int totalSeconds) {
                   ),
                 ),
               ),
+
               const SizedBox(height: 18),
 
-              // ✅ Manual add button (restored)
-              Align(
-                alignment: Alignment.centerRight,
-                child: OutlinedButton.icon(
-                  onPressed: () => _showManualAddDialog(context),
-                  icon: const Icon(Icons.edit_calendar),
-                  label: const Text('Add time manually'),
-                ),
-              ),
-
-              const SizedBox(height: 10),
-
+              // TOTAL timer (big)
               Center(
                 child: Text(
-                  _timerText(elapsed),
-                  style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w700),
+                  _timerText(totalSeconds),
+                  style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w800),
                 ),
               ),
+              const SizedBox(height: 6),
+
+              // Session timer (small)
+              Center(
+                child: Text(
+                  'This session: ${_timerText(sessionSeconds)}',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+              ),
+
               const SizedBox(height: 12),
-              Column(
-  children: [
-    SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: (active == null)
-            ? null
-            : (s.isRunning
-                ? session.pause
-                : (s.isPaused ? session.resume : session.start)),
-        icon: Icon(
-          (active == null)
-              ? Icons.timer_off
-              : (s.isRunning ? Icons.pause : Icons.play_arrow),
-        ),
-        label: Text(
-          (active == null)
-              ? 'Select a project'
-              : (s.isRunning ? 'Pause' : (s.isPaused ? 'Resume' : 'Start')),
-        ),
-      ),
-    ),
-    const SizedBox(height: 10),
-    SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: (s.isRunning || s.isPaused) ? stopAndAdd : null,
-        icon: const Icon(Icons.stop),
-        label: const Text('Stop & Add'),
-      ),
-    ),
-  ],
-),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton(
+                    onPressed: mainAction,
+                    child: Text(mainLabel),
+                  ),
+                  const SizedBox(width: 10),
+                  ElevatedButton(
+                    onPressed: (active != null && (s.isRunning || s.isPaused))
+                        ? stopAndAdd
+                        : null,
+                    child: const Text('Stop & Add'),
+                  ),
+                ],
+              ),
 
               const SizedBox(height: 20),
               const Text(
@@ -403,33 +245,25 @@ String _timerText(int totalSeconds) {
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10),
+
               if (sorted.isEmpty)
-                const Text('No projects yet. Go to Projects tab and add one.')
+                const Text('No active projects yet. Upcoming projects will appear on the start date.')
               else
                 ...sorted.map((p) {
                   final isSelected = (s.activeProjectId == p.id);
-                  final isUpcoming = _isUpcoming(p);
 
                   return Card(
                     child: ListTile(
                       title: Text(p.title),
                       subtitle: Text(
-  '${p.statusLabel} • ${_dayLabel(p)}\n'
-  'Target: ${p.targetHours}h • Daily: ${p.dailyTargetHours.toStringAsFixed(1)}h/day',
-),
-isThreeLine: true,
-
-                      trailing: isSelected
-                          ? const Icon(Icons.check_circle)
-                          : (isUpcoming ? const Icon(Icons.lock_outline) : null),
+                        '${p.statusLabel} • ${_dayLabel(p)}\n'
+                        'Target: ${p.targetHours}h • Daily: ${p.dailyTargetHours.toStringAsFixed(1)}h/day',
+                      ),
+                      isThreeLine: true,
+                      trailing: isSelected ? const Icon(Icons.check_circle) : null,
                       onTap: () async {
                         if (!_canTapProject(s, p)) {
-                          _snack(
-                            messenger,
-                            isUpcoming
-                                ? 'This project starts later. You can pray on the start date.'
-                                : 'Stop the timer to switch project.',
-                          );
+                          _snack(messenger, 'Stop the timer to switch project.');
                           return;
                         }
 
