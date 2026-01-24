@@ -16,12 +16,16 @@ class PrayNowScreen extends StatelessWidget {
 
   String _fmt2(int n) => n.toString().padLeft(2, '0');
 
-  String _timerText(int totalSeconds) {
-    final h = totalSeconds ~/ 3600;
-    final m = (totalSeconds % 3600) ~/ 60;
-    final s = totalSeconds % 60;
-    return '${_fmt2(h)}:${_fmt2(m)}:${_fmt2(s)}';
-  }
+String _timerText(int totalSeconds) {
+  final h = totalSeconds ~/ 3600;
+  final m = (totalSeconds % 3600) ~/ 60;
+  final s = totalSeconds % 60;
+
+  // ✅ Hours can be 1–3+ digits (no padding)
+  // ✅ Minutes/Seconds always 2 digits
+  return '$h:${_fmt2(m)}:${_fmt2(s)}';
+}
+
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -359,29 +363,40 @@ class PrayNowScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  ElevatedButton(
-                    onPressed: (active == null)
-                        ? null
-                        : (s.isRunning
-                            ? null
-                            : (s.isPaused ? session.resume : session.start)),
-                    child: Text(s.isPaused ? 'Resume' : 'Start'),
-                  ),
-                  const SizedBox(width: 10),
-                  ElevatedButton(
-                    onPressed: s.isRunning ? session.pause : null,
-                    child: const Text('Pause'),
-                  ),
-                  const SizedBox(width: 10),
-                  ElevatedButton(
-                    onPressed: (s.isRunning || s.isPaused) ? stopAndAdd : null,
-                    child: const Text('Stop & Add'),
-                  ),
-                ],
-              ),
+              Column(
+  children: [
+    SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: (active == null)
+            ? null
+            : (s.isRunning
+                ? session.pause
+                : (s.isPaused ? session.resume : session.start)),
+        icon: Icon(
+          (active == null)
+              ? Icons.timer_off
+              : (s.isRunning ? Icons.pause : Icons.play_arrow),
+        ),
+        label: Text(
+          (active == null)
+              ? 'Select a project'
+              : (s.isRunning ? 'Pause' : (s.isPaused ? 'Resume' : 'Start')),
+        ),
+      ),
+    ),
+    const SizedBox(height: 10),
+    SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: (s.isRunning || s.isPaused) ? stopAndAdd : null,
+        icon: const Icon(Icons.stop),
+        label: const Text('Stop & Add'),
+      ),
+    ),
+  ],
+),
+
               const SizedBox(height: 20),
               const Text(
                 'Projects (most recent first)',
