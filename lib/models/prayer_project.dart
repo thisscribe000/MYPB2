@@ -42,7 +42,7 @@ class PrayerProject {
   /// leftover seconds after Stop & Add
   int carrySeconds;
 
-  /// ✅ NEW: archive completed/old projects
+  /// ✅ Archive completed/old projects (hidden from Pray Now)
   bool isArchived;
 
   PrayerProject({
@@ -83,6 +83,11 @@ class PrayerProject {
     return day;
   }
 
+  bool get isScheduleEnded {
+    final day = dayNumberFor(DateTime.now());
+    return day == durationDays + 1;
+  }
+
   int daysUntilStart(DateTime date) {
     final start = _dateOnly(plannedStartDate);
     final current = _dateOnly(date);
@@ -92,19 +97,10 @@ class PrayerProject {
   String get statusLabel {
     if (isArchived) return 'Archived';
     if (isTargetReached) return 'Completed ✅';
-
     final d = dayNumberFor(DateTime.now());
     if (d == 0) return 'Upcoming';
     if (d == durationDays + 1) return 'Schedule ended';
     return 'Active';
-  }
-
-  /// ✅ for Pray Now screen filtering
-  bool get isLockedForPrayNow {
-    final d = dayNumberFor(DateTime.now());
-    if (isArchived) return true;
-    if (d == 0) return true; // upcoming
-    return false;
   }
 
   double get progress {
@@ -186,6 +182,17 @@ class PrayerProject {
               .toList();
         }
       });
+    } else {
+      final rawNotes = map['notes'];
+      if (rawNotes is List) {
+        parsedDayNotes[1] = rawNotes
+            .map((item) => PrayerNote.fromMap(Map<String, dynamic>.from(item)))
+            .toList();
+      } else if (rawNotes is String && rawNotes.trim().isNotEmpty) {
+        parsedDayNotes[1] = [
+          PrayerNote(text: rawNotes.trim(), createdAt: DateTime.now()),
+        ];
+      }
     }
 
     final Set<int> parsedPrayedDays = {};
@@ -197,6 +204,7 @@ class PrayerProject {
       }
     }
 
+    // Migration safety: older data may have minutes but no prayedDays
     if (parsedPrayedDays.isEmpty) {
       final minutes = (map['totalMinutesPrayed'] as int?) ?? 0;
       if (minutes > 0) parsedPrayedDays.add(1);
