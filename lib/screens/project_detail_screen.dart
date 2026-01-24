@@ -21,7 +21,7 @@ class ProjectDetailScreen extends StatefulWidget {
 }
 
 class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
-  int _selectedDay = 0; // will be set on build if prayedDays exists
+  int _selectedDay = 0;
   final TextEditingController _noteCtrl = TextEditingController();
 
   @override
@@ -36,7 +36,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final h = totalSeconds ~/ 3600;
     final m = (totalSeconds % 3600) ~/ 60;
     final s = totalSeconds % 60;
-
     // Hours can grow (no padding), mins/secs stay 2 digits
     return '$h:${_fmt2(m)}:${_fmt2(s)}';
   }
@@ -142,25 +141,29 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final project = widget.project;
-
     return AnimatedBuilder(
       animation: widget.session,
       builder: (context, _) {
+        // ✅ Always use the latest copy from the list (not the stale widget.project)
+        final current = widget.projects.firstWhere(
+          (p) => p.id == widget.project.id,
+          orElse: () => widget.project,
+        );
+
         final s = widget.session.state;
-        final isActiveProject = (s.activeProjectId == project.id);
+        final isActiveProject = (s.activeProjectId == current.id);
         final hasSomeOtherActive =
-            (s.activeProjectId != null && s.activeProjectId != project.id);
+            (s.activeProjectId != null && s.activeProjectId != current.id);
 
         final elapsed = widget.session.displayedElapsedSeconds;
 
-        // Default selected day: latest prayed day (or today day if none)
-        final availableDays = project.availableNoteDays;
+        // Default selected day
+        final availableDays = current.availableNoteDays;
         if (_selectedDay == 0) {
-          final todayDay = project.dayNumberFor(DateTime.now());
+          final todayDay = current.dayNumberFor(DateTime.now());
           if (availableDays.isNotEmpty) {
             _selectedDay = availableDays.first;
-          } else if (todayDay >= 1 && todayDay <= project.durationDays) {
+          } else if (todayDay >= 1 && todayDay <= current.durationDays) {
             _selectedDay = todayDay;
           } else {
             _selectedDay = 1;
@@ -175,10 +178,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           final remainderSeconds = seconds % 60;
 
           final updated = [...widget.projects];
-          final idx = updated.indexWhere((p) => p.id == project.id);
+          final idx = updated.indexWhere((p) => p.id == current.id);
           if (idx == -1) return;
 
-          // mark prayed day if ANY time was recorded
           final todayDay = updated[idx].dayNumberFor(DateTime.now());
           if (seconds > 0 &&
               todayDay >= 1 &&
@@ -189,23 +191,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           if (minutesToAdd > 0) {
             updated[idx].totalMinutesPrayed += minutesToAdd;
           }
+
           updated[idx].carrySeconds = remainderSeconds;
           updated[idx].lastPrayedAt = DateTime.now();
 
           await widget.onProjectsUpdated(updated);
 
           await widget.session.selectProject(
-            project.id,
+            current.id,
             initialElapsedSeconds: remainderSeconds,
           );
 
           if (minutesToAdd > 0) {
-            _snack('Added $minutesToAdd minute(s) to "${project.title}".');
+            _snack('Added $minutesToAdd minute(s) to "${current.title}".');
           } else {
-            _snack('Saved ${remainderSeconds}s for "${project.title}".');
+            _snack('Saved ${remainderSeconds}s for "${current.title}".');
           }
 
-          setState(() {});
+          if (mounted) {
+            setState(() {});
+          }
         }
 
         Future<void> addNote() async {
@@ -213,10 +218,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           if (text.isEmpty) return;
 
           final updated = [...widget.projects];
-          final idx = updated.indexWhere((p) => p.id == project.id);
+          final idx = updated.indexWhere((p) => p.id == current.id);
           if (idx == -1) return;
 
-          // Only allow notes on prayed days:
           if (!updated[idx].prayedDays.contains(_selectedDay)) {
             _snack('You can only add notes for days you have prayed.');
             return;
@@ -230,12 +234,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           await widget.onProjectsUpdated(updated);
           _noteCtrl.clear();
           _snack('Note saved.');
-          setState(() {});
+
+          if (mounted) {
+            setState(() {});
+          }
         }
 
         Future<void> addTimeInRetrospect() async {
           final updated = [...widget.projects];
-          final idx = updated.indexWhere((p) => p.id == project.id);
+          final idx = updated.indexWhere((p) => p.id == current.id);
           if (idx == -1) return;
 
           final nowDay = updated[idx].dayNumberFor(DateTime.now());
@@ -287,8 +294,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         105,
                         120
                       ]
-                          .map((m) =>
-                              DropdownMenuEntry(value: m, label: '$m minutes'))
+                          .map(
+                            (m) => DropdownMenuEntry(
+                              value: m,
+                              label: '$m minutes',
+                            ),
+                          )
                           .toList(),
                       onSelected: (v) {
                         if (v != null) chosenMinutes = v;
@@ -318,14 +329,45 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
           await widget.onProjectsUpdated(updated);
           _snack('Added $chosenMinutes min to Day $chosenDay.');
-          setState(() {});
+
+          if (mounted) {
+            setState(() {});
+          }
         }
 
-        final notesForSelectedDay = project.dayNotes[_selectedDay] ?? [];
-        final selectedDate = _dateForDay(project, _selectedDay);
+        final notesForSelectedDay = current.dayNotes[_selectedDay] ?? [];
+        final selectedDate = _dateForDay(current, _selectedDay);
 
         return Scaffold(
-          appBar: AppBar(title: Text(project.title)),
+          appBar: AppBar(
+            title: Text(current.title),
+            actions: [
+              // This assumes your model has: bool isArchived + you handle it later in batch 4.
+              // If you haven't added isArchived yet, REMOVE this IconButton for now.
+              if (current.toMap().containsKey('isArchived'))
+                IconButton(
+                  tooltip: (current as dynamic).isArchived ? 'Unarchive' : 'Archive',
+                  icon: Icon((current as dynamic).isArchived
+                      ? Icons.unarchive
+                      : Icons.archive_outlined),
+                  onPressed: () async {
+                    final updated = [...widget.projects];
+                    final idx = updated.indexWhere((p) => p.id == current.id);
+                    if (idx == -1) return;
+
+                    final map = updated[idx].toMap();
+                    final isArchived = (map['isArchived'] as bool?) ?? false;
+                    map['isArchived'] = !isArchived;
+
+                    // Re-create project from map (keeps it consistent with your storage style)
+                    updated[idx] = PrayerProject.fromMap(map);
+
+                    await widget.onProjectsUpdated(updated);
+                    if (mounted) setState(() {});
+                  },
+                ),
+            ],
+          ),
           body: Padding(
             padding: const EdgeInsets.all(16),
             child: ListView(
@@ -337,18 +379,18 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '${project.statusLabel} • ${_dayProgressLabel(project)}',
+                          '${current.statusLabel} • ${_dayProgressLabel(current)}',
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Target: ${project.targetHours}h • Daily: ${project.dailyTargetHours.toStringAsFixed(1)}h/day',
+                          'Target: ${current.targetHours}h • Daily: ${current.dailyTargetHours.toStringAsFixed(1)}h/day',
                         ),
                         const SizedBox(height: 10),
-                        LinearProgressIndicator(value: project.progress),
+                        LinearProgressIndicator(value: current.progress),
                         const SizedBox(height: 6),
                         Text(
-                          '${(project.progress * 100).toStringAsFixed(0)}% complete',
+                          '${(current.progress * 100).toStringAsFixed(0)}% complete',
                         ),
                       ],
                     ),
@@ -362,9 +404,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                     child: Column(
                       children: [
                         Text(
-                          _timerText(
-                            isActiveProject ? elapsed : project.carrySeconds,
-                          ),
+                          _timerText(isActiveProject ? elapsed : current.carrySeconds),
                           style: const TextStyle(
                             fontSize: 34,
                             fontWeight: FontWeight.w700,
@@ -404,10 +444,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                             ),
                             const SizedBox(width: 10),
                             ElevatedButton(
-                              onPressed:
-                                  isActiveProject && (s.isRunning || s.isPaused)
-                                      ? stopAndAddHere
-                                      : null,
+                              onPressed: isActiveProject && (s.isRunning || s.isPaused)
+                                  ? stopAndAddHere
+                                  : null,
                               child: const Text('Stop & Add'),
                             ),
                           ],
@@ -416,16 +455,18 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                     ),
                   ),
                 ),
+
                 const SizedBox(height: 16),
 
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.history),
                     title: const Text('Add time in retrospect'),
-                    subtitle: const Text('Log minutes for a previous day'),
+                    subtitle: const Text('Log minutes for a previous day (15-min blocks)'),
                     onTap: addTimeInRetrospect,
                   ),
                 ),
+
                 const SizedBox(height: 16),
 
                 Card(
@@ -444,16 +485,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         const SizedBox(height: 10),
 
                         DropdownMenu<int>(
-                          initialSelection:
-                              (project.prayedDays.contains(_selectedDay))
-                                  ? _selectedDay
-                                  : (availableDays.isNotEmpty
-                                      ? availableDays.first
-                                      : _selectedDay),
+                          initialSelection: (current.prayedDays.contains(_selectedDay))
+                              ? _selectedDay
+                              : (availableDays.isNotEmpty ? availableDays.first : _selectedDay),
                           expandedInsets: EdgeInsets.zero,
                           label: const Text('Select day'),
                           dropdownMenuEntries: availableDays.map((d) {
-                            final date = _dateForDay(project, d);
+                            final date = _dateForDay(current, d);
                             return DropdownMenuEntry(
                               value: d,
                               label: '${_fmtDDMMYYYY(date)} (Day $d)',
@@ -503,9 +541,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                             return Card(
                               child: ListTile(
                                 title: Text(note.text),
-                                subtitle: Text(
-                                  _fmtDDMMYYYY(_dateOnly(note.createdAt)),
-                                ),
+                                subtitle: Text(_fmtDDMMYYYY(_dateOnly(note.createdAt))),
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -517,18 +553,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                           initialText: note.text,
                                           onSave: (newText) async {
                                             final updated = [...widget.projects];
-                                            final idx = updated.indexWhere(
-                                              (p) => p.id == project.id,
-                                            );
+                                            final idx =
+                                                updated.indexWhere((p) => p.id == current.id);
                                             if (idx == -1) return;
 
-                                            final list =
-                                                updated[idx].dayNotes[_selectedDay];
-                                            if (list == null ||
-                                                i < 0 ||
-                                                i >= list.length) {
-                                              return;
-                                            }
+                                            final list = updated[idx].dayNotes[_selectedDay];
+                                            if (list == null || i < 0 || i >= list.length) return;
 
                                             final old = list[i];
                                             list[i] = PrayerNote(
@@ -552,25 +582,17 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                         await _confirmDelete(
                                           onDelete: () async {
                                             final updated = [...widget.projects];
-                                            final idx = updated.indexWhere(
-                                              (p) => p.id == project.id,
-                                            );
+                                            final idx =
+                                                updated.indexWhere((p) => p.id == current.id);
                                             if (idx == -1) return;
 
-                                            final list =
-                                                updated[idx].dayNotes[_selectedDay];
-                                            if (list == null ||
-                                                i < 0 ||
-                                                i >= list.length) {
-                                              return;
-                                            }
+                                            final list = updated[idx].dayNotes[_selectedDay];
+                                            if (list == null || i < 0 || i >= list.length) return;
 
                                             list.removeAt(i);
 
                                             if (list.isEmpty) {
-                                              updated[idx]
-                                                  .dayNotes
-                                                  .remove(_selectedDay);
+                                              updated[idx].dayNotes.remove(_selectedDay);
                                             }
 
                                             await widget.onProjectsUpdated(updated);

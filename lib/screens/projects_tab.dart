@@ -47,8 +47,9 @@ class ProjectsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final active = projects.where((p) => !_isUpcoming(p)).toList();
-    final upcoming = projects.where(_isUpcoming).toList();
+    final active = projects.where((p) => !_isUpcoming(p) && !p.isArchived).toList();
+final upcoming = projects.where((p) => _isUpcoming(p) && !p.isArchived).toList();
+final archived = projects.where((p) => p.isArchived).toList();
 
     // Sort active by most recent prayed
     active.sort((a, b) {
@@ -122,6 +123,17 @@ class ProjectsTab extends StatelessWidget {
               ...upcoming.map(projectCard),
 
             const SizedBox(height: 80),
+            const SizedBox(height: 8),
+
+            if (archived.isNotEmpty) sectionTitle('Archived'),
+            if (archived.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('No archived projects.'),
+              )
+            else
+              ...archived.map(projectCard),
+
           ],
         ),
       ),

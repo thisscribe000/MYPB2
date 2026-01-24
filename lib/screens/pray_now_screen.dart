@@ -48,15 +48,18 @@ class PrayNowScreen extends StatelessWidget {
 
   bool _isUpcoming(PrayerProject p) => p.dayNumberFor(DateTime.now()) == 0;
 
-  List<PrayerProject> _sortedActiveProjects() {
-    final list = projects.where((p) => !_isUpcoming(p)).toList();
-    list.sort((a, b) {
-      final ad = a.lastPrayedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-      final bd = b.lastPrayedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-      return bd.compareTo(ad);
-    });
-    return list;
-  }
+  List<PrayerProject> _sortedProjects() {
+  final list = [...projects];
+
+  // sort by most recent prayed
+  list.sort((a, b) {
+    final ad = a.lastPrayedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final bd = b.lastPrayedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+    return bd.compareTo(ad);
+  });
+
+  return list;
+}
 
   void _snack(ScaffoldMessengerState messenger, String msg) {
     messenger.hideCurrentSnackBar();
@@ -84,7 +87,9 @@ class PrayNowScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sorted = _sortedActiveProjects();
+    final sorted = _sortedProjects()
+    .where((p) => !p.isLockedForPrayNow)
+    .toList();
 
     return AnimatedBuilder(
       animation: session,

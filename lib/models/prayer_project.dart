@@ -37,11 +37,13 @@ class PrayerProject {
   Map<int, List<PrayerNote>> dayNotes;
 
   /// Days where we have logged prayer time (timer or manual/retro add).
-  /// Used to control note dropdown options.
   Set<int> prayedDays;
 
   /// leftover seconds after Stop & Add
   int carrySeconds;
+
+  /// ✅ NEW: archive completed/old projects
+  bool isArchived;
 
   PrayerProject({
     required this.id,
@@ -54,6 +56,7 @@ class PrayerProject {
     Map<int, List<PrayerNote>>? dayNotes,
     Set<int>? prayedDays,
     this.carrySeconds = 0,
+    this.isArchived = false,
   })  : dayNotes = dayNotes ?? {},
         prayedDays = prayedDays ?? {};
 
@@ -80,11 +83,6 @@ class PrayerProject {
     return day;
   }
 
-  bool get isScheduleEnded {
-    final day = dayNumberFor(DateTime.now());
-    return day == durationDays + 1;
-  }
-
   int daysUntilStart(DateTime date) {
     final start = _dateOnly(plannedStartDate);
     final current = _dateOnly(date);
@@ -92,11 +90,21 @@ class PrayerProject {
   }
 
   String get statusLabel {
+    if (isArchived) return 'Archived';
     if (isTargetReached) return 'Completed ✅';
+
     final d = dayNumberFor(DateTime.now());
     if (d == 0) return 'Upcoming';
     if (d == durationDays + 1) return 'Schedule ended';
     return 'Active';
+  }
+
+  /// ✅ for Pray Now screen filtering
+  bool get isLockedForPrayNow {
+    final d = dayNumberFor(DateTime.now());
+    if (isArchived) return true;
+    if (d == 0) return true; // upcoming
+    return false;
   }
 
   double get progress {
@@ -146,6 +154,7 @@ class PrayerProject {
       'dayNotes': notesMap,
       'prayedDays': prayedDays.toList(),
       'carrySeconds': carrySeconds,
+      'isArchived': isArchived,
     };
   }
 
@@ -173,23 +182,10 @@ class PrayerProject {
         if (day == null) return;
         if (v is List) {
           parsedDayNotes[day] = v
-              .map(
-                (item) => PrayerNote.fromMap(Map<String, dynamic>.from(item)),
-              )
+              .map((item) => PrayerNote.fromMap(Map<String, dynamic>.from(item)))
               .toList();
         }
       });
-    } else {
-      final rawNotes = map['notes'];
-      if (rawNotes is List) {
-        parsedDayNotes[1] = rawNotes
-            .map((item) => PrayerNote.fromMap(Map<String, dynamic>.from(item)))
-            .toList();
-      } else if (rawNotes is String && rawNotes.trim().isNotEmpty) {
-        parsedDayNotes[1] = [
-          PrayerNote(text: rawNotes.trim(), createdAt: DateTime.now()),
-        ];
-      }
     }
 
     final Set<int> parsedPrayedDays = {};
@@ -200,11 +196,11 @@ class PrayerProject {
         if (n != null) parsedPrayedDays.add(n);
       }
     }
-    // ✅ Migration safety: older data may have minutes but no prayedDays
+
     if (parsedPrayedDays.isEmpty) {
-  final minutes = (map['totalMinutesPrayed'] as int?) ?? 0;
-  if (minutes > 0) parsedPrayedDays.add(1);
-}
+      final minutes = (map['totalMinutesPrayed'] as int?) ?? 0;
+      if (minutes > 0) parsedPrayedDays.add(1);
+    }
 
     return PrayerProject(
       id: map['id'] as String,
@@ -217,6 +213,7 @@ class PrayerProject {
       dayNotes: parsedDayNotes,
       prayedDays: parsedPrayedDays,
       carrySeconds: (map['carrySeconds'] as int?) ?? 0,
+      isArchived: (map['isArchived'] as bool?) ?? false,
     );
   }
 }
