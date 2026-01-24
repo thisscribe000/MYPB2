@@ -10,10 +10,6 @@ class SettingsScreen extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: ListView(
         children: const [
-          Text(
-            'Settings',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
           SizedBox(height: 12),
           Text(
             'We’ll add settings options here in the next stages (reminders, preferences, etc).',

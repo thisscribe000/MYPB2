@@ -41,7 +41,6 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
-  /// ✅ Single source of truth update
   Future<void> _updateProjects(List<PrayerProject> updated) async {
     await ProjectStorage.saveProjects(updated);
     if (!mounted) return;
@@ -94,6 +93,7 @@ class _AppShellState extends State<AppShell> {
     final showFab = _index != 3; // hide on Settings
 
     return Scaffold(
+      extendBody: false, // ✅ helps avoid transparency weirdness
       appBar: AppBar(
         title: Text(
           switch (_index) {
@@ -113,27 +113,37 @@ class _AppShellState extends State<AppShell> {
               child: const Icon(Icons.add),
             )
           : null,
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _index,
-        onTap: (i) => setState(() => _index = i),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.timer),
-            label: 'Pray Now',
+
+      // ✅ Bottom tabs with visible background (light red placeholder)
+      bottomNavigationBar: Material(
+        color: Colors.red.shade50,
+        child: SafeArea(
+          top: false,
+          child: BottomNavigationBar(
+            backgroundColor: Colors.red.shade50,
+            type: BottomNavigationBarType.fixed,
+            currentIndex: _index,
+            onTap: (i) => setState(() => _index = i),
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.timer),
+                label: 'Pray Now',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.list_alt),
+                label: 'Projects',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.bar_chart),
+                label: 'Analytics',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.settings),
+                label: 'Settings',
+              ),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.list_alt),
-            label: 'Projects',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.bar_chart),
-            label: 'Analytics',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
-        ],
+        ),
       ),
     );
   }

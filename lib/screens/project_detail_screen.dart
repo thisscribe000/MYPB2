@@ -36,7 +36,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final h = totalSeconds ~/ 3600;
     final m = (totalSeconds % 3600) ~/ 60;
     final s = totalSeconds % 60;
-    return '${_fmt2(h)}:${_fmt2(m)}:${_fmt2(s)}';
+
+    // Hours can grow (no padding), mins/secs stay 2 digits
+    return '$h:${_fmt2(m)}:${_fmt2(s)}';
   }
 
   void _snack(String msg) {
@@ -64,12 +66,83 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     return 'Day $d/${p.durationDays}';
   }
 
+  Future<void> _editNoteDialog({
+    required String initialText,
+    required Future<void> Function(String newText) onSave,
+  }) async {
+    final ctrl = TextEditingController(text: initialText);
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) {
+        return AlertDialog(
+          title: const Text('Edit note'),
+          content: TextField(
+            controller: ctrl,
+            minLines: 3,
+            maxLines: 8,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              labelText: 'Note',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (ok != true) return;
+
+    final newText = ctrl.text.trim();
+    if (newText.isEmpty) {
+      _snack('Note can’t be empty.');
+      return;
+    }
+
+    await onSave(newText);
+    _snack('Note updated.');
+  }
+
+  Future<void> _confirmDelete({
+    required Future<void> Function() onDelete,
+  }) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) {
+        return AlertDialog(
+          title: const Text('Delete note?'),
+          content: const Text('This can’t be undone.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (ok != true) return;
+    await onDelete();
+    _snack('Note deleted.');
+  }
+
   @override
   Widget build(BuildContext context) {
-    final liveProject = widget.projects
-    .firstWhere((p) => p.id == widget.project.id, orElse: () => widget.project);
-final project = liveProject;
-
+    final project = widget.project;
 
     return AnimatedBuilder(
       animation: widget.session,
@@ -105,7 +178,7 @@ final project = liveProject;
           final idx = updated.indexWhere((p) => p.id == project.id);
           if (idx == -1) return;
 
-          // ✅ mark prayed day if ANY time was recorded
+          // mark prayed day if ANY time was recorded
           final todayDay = updated[idx].dayNumberFor(DateTime.now());
           if (seconds > 0 &&
               todayDay >= 1 &&
@@ -249,6 +322,7 @@ final project = liveProject;
         }
 
         final notesForSelectedDay = project.dayNotes[_selectedDay] ?? [];
+        final selectedDate = _dateForDay(project, _selectedDay);
 
         return Scaffold(
           appBar: AppBar(title: Text(project.title)),
@@ -256,7 +330,6 @@ final project = liveProject;
             padding: const EdgeInsets.all(16),
             child: ListView(
               children: [
-                // Header card
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(12),
@@ -275,15 +348,14 @@ final project = liveProject;
                         LinearProgressIndicator(value: project.progress),
                         const SizedBox(height: 6),
                         Text(
-                            '${(project.progress * 100).toStringAsFixed(0)}% complete'),
+                          '${(project.progress * 100).toStringAsFixed(0)}% complete',
+                        ),
                       ],
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 16),
 
-                // Timer card
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(14),
@@ -291,7 +363,8 @@ final project = liveProject;
                       children: [
                         Text(
                           _timerText(
-                              isActiveProject ? elapsed : project.carrySeconds),
+                            isActiveProject ? elapsed : project.carrySeconds,
+                          ),
                           style: const TextStyle(
                             fontSize: 34,
                             fontWeight: FontWeight.w700,
@@ -343,36 +416,33 @@ final project = liveProject;
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 16),
 
-                // Retro add time
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.history),
                     title: const Text('Add time in retrospect'),
-                    subtitle: const Text(
-                        'Log minutes for a previous day (15-min blocks)'),
+                    subtitle: const Text('Log minutes for a previous day'),
                     onTap: addTimeInRetrospect,
                   ),
                 ),
-
                 const SizedBox(height: 16),
 
-                // Notes section
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Notes',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                        Text(
+                          'Notes — ${_fmtDDMMYYYY(selectedDate)} (Day $_selectedDay)',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
                         ),
                         const SizedBox(height: 10),
 
-                        // ✅ only prayed days appear here
                         DropdownMenu<int>(
                           initialSelection:
                               (project.prayedDays.contains(_selectedDay))
@@ -428,11 +498,95 @@ final project = liveProject;
                             style: TextStyle(color: Colors.grey),
                           )
                         else
-                          ...notesForSelectedDay.map((n) => ListTile(
-                                title: Text(n.text),
-                                subtitle:
-                                    Text(_fmtDDMMYYYY(_dateOnly(n.createdAt))),
-                              )),
+                          ...List.generate(notesForSelectedDay.length, (i) {
+                            final note = notesForSelectedDay[i];
+                            return Card(
+                              child: ListTile(
+                                title: Text(note.text),
+                                subtitle: Text(
+                                  _fmtDDMMYYYY(_dateOnly(note.createdAt)),
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      tooltip: 'Edit',
+                                      icon: const Icon(Icons.edit),
+                                      onPressed: () async {
+                                        await _editNoteDialog(
+                                          initialText: note.text,
+                                          onSave: (newText) async {
+                                            final updated = [...widget.projects];
+                                            final idx = updated.indexWhere(
+                                              (p) => p.id == project.id,
+                                            );
+                                            if (idx == -1) return;
+
+                                            final list =
+                                                updated[idx].dayNotes[_selectedDay];
+                                            if (list == null ||
+                                                i < 0 ||
+                                                i >= list.length) {
+                                              return;
+                                            }
+
+                                            final old = list[i];
+                                            list[i] = PrayerNote(
+                                              text: newText,
+                                              createdAt: old.createdAt,
+                                            );
+
+                                            await widget.onProjectsUpdated(updated);
+
+                                            if (mounted) {
+                                              setState(() {});
+                                            }
+                                          },
+                                        );
+                                      },
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Delete',
+                                      icon: const Icon(Icons.delete_outline),
+                                      onPressed: () async {
+                                        await _confirmDelete(
+                                          onDelete: () async {
+                                            final updated = [...widget.projects];
+                                            final idx = updated.indexWhere(
+                                              (p) => p.id == project.id,
+                                            );
+                                            if (idx == -1) return;
+
+                                            final list =
+                                                updated[idx].dayNotes[_selectedDay];
+                                            if (list == null ||
+                                                i < 0 ||
+                                                i >= list.length) {
+                                              return;
+                                            }
+
+                                            list.removeAt(i);
+
+                                            if (list.isEmpty) {
+                                              updated[idx]
+                                                  .dayNotes
+                                                  .remove(_selectedDay);
+                                            }
+
+                                            await widget.onProjectsUpdated(updated);
+
+                                            if (mounted) {
+                                              setState(() {});
+                                            }
+                                          },
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }),
                       ],
                     ),
                   ),
