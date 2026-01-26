@@ -60,13 +60,11 @@ class PrayerProject {
   })  : dayNotes = dayNotes ?? {},
         prayedDays = prayedDays ?? {};
 
-  DateTime get endDate =>
-      plannedStartDate.add(Duration(days: durationDays - 1));
+  DateTime get endDate => plannedStartDate.add(Duration(days: durationDays - 1));
 
   int get targetMinutes => targetHours * 60;
 
-  bool get isTargetReached =>
-      targetMinutes > 0 && totalMinutesPrayed >= targetMinutes;
+  bool get isTargetReached => targetMinutes > 0 && totalMinutesPrayed >= targetMinutes;
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 

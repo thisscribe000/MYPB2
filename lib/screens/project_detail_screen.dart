@@ -36,7 +36,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final h = totalSeconds ~/ 3600;
     final m = (totalSeconds % 3600) ~/ 60;
     final s = totalSeconds % 60;
-    // Hours can grow (no padding), mins/secs stay 2 digits
     return '$h:${_fmt2(m)}:${_fmt2(s)}';
   }
 
@@ -144,7 +143,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     return AnimatedBuilder(
       animation: widget.session,
       builder: (context, _) {
-        // ✅ Always use the latest copy from the list (not the stale widget.project)
+        // Always use the latest copy from the list (not stale widget.project)
         final current = widget.projects.firstWhere(
           (p) => p.id == widget.project.id,
           orElse: () => widget.project,
@@ -170,8 +169,33 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           }
         }
 
+        Future<void> toggleArchive() async {
+          // Prevent archiving while timer is running/paused on THIS project
+          if (isActiveProject && (s.isRunning || s.isPaused)) {
+            _snack('Stop the timer before archiving/unarchiving this project.');
+            return;
+          }
+
+          final updated = [...widget.projects];
+          final idx = updated.indexWhere((p) => p.id == current.id);
+          if (idx == -1) return;
+
+          updated[idx].isArchived = !updated[idx].isArchived;
+          await widget.onProjectsUpdated(updated);
+
+          _snack(updated[idx].isArchived ? 'Project archived.' : 'Project unarchived.');
+
+          if (mounted) {
+            setState(() {});
+          }
+        }
+
         Future<void> stopAndAddHere() async {
           if (!isActiveProject) return;
+          if (current.isArchived) {
+            _snack('This project is archived. Unarchive it to log time.');
+            return;
+          }
 
           final seconds = await widget.session.stopAndReset();
           final minutesToAdd = seconds ~/ 60;
@@ -182,9 +206,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           if (idx == -1) return;
 
           final todayDay = updated[idx].dayNumberFor(DateTime.now());
-          if (seconds > 0 &&
-              todayDay >= 1 &&
-              todayDay <= updated[idx].durationDays) {
+          if (seconds > 0 && todayDay >= 1 && todayDay <= updated[idx].durationDays) {
             updated[idx].markDayPrayed(todayDay);
           }
 
@@ -241,6 +263,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         }
 
         Future<void> addTimeInRetrospect() async {
+          if (current.isArchived) {
+            _snack('This project is archived. Unarchive it to log time.');
+            return;
+          }
+
           final updated = [...widget.projects];
           final idx = updated.indexWhere((p) => p.id == current.id);
           if (idx == -1) return;
@@ -248,9 +275,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           final nowDay = updated[idx].dayNumberFor(DateTime.now());
           final maxDay = (nowDay <= 0)
               ? 1
-              : (nowDay > updated[idx].durationDays
-                  ? updated[idx].durationDays
-                  : nowDay);
+              : (nowDay > updated[idx].durationDays ? updated[idx].durationDays : nowDay);
 
           int chosenDay = maxDay;
           int chosenMinutes = 15;
@@ -284,22 +309,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       initialSelection: chosenMinutes,
                       expandedInsets: EdgeInsets.zero,
                       label: const Text('Minutes'),
-                      dropdownMenuEntries: const [
-                        15,
-                        30,
-                        45,
-                        60,
-                        75,
-                        90,
-                        105,
-                        120
-                      ]
-                          .map(
-                            (m) => DropdownMenuEntry(
-                              value: m,
-                              label: '$m minutes',
-                            ),
-                          )
+                      dropdownMenuEntries: const [15, 30, 45, 60, 75, 90, 105, 120]
+                          .map((m) => DropdownMenuEntry(value: m, label: '$m minutes'))
                           .toList(),
                       onSelected: (v) {
                         if (v != null) chosenMinutes = v;
@@ -338,34 +349,18 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         final notesForSelectedDay = current.dayNotes[_selectedDay] ?? [];
         final selectedDate = _dateForDay(current, _selectedDay);
 
+        final bool timerButtonsEnabled = isActiveProject && !current.isArchived;
+        final bool canStartTimerHere = timerButtonsEnabled && !hasSomeOtherActive;
+
         return Scaffold(
           appBar: AppBar(
             title: Text(current.title),
             actions: [
-              // This assumes your model has: bool isArchived + you handle it later in batch 4.
-              // If you haven't added isArchived yet, REMOVE this IconButton for now.
-              if (current.toMap().containsKey('isArchived'))
-                IconButton(
-                  tooltip: (current as dynamic).isArchived ? 'Unarchive' : 'Archive',
-                  icon: Icon((current as dynamic).isArchived
-                      ? Icons.unarchive
-                      : Icons.archive_outlined),
-                  onPressed: () async {
-                    final updated = [...widget.projects];
-                    final idx = updated.indexWhere((p) => p.id == current.id);
-                    if (idx == -1) return;
-
-                    final map = updated[idx].toMap();
-                    final isArchived = (map['isArchived'] as bool?) ?? false;
-                    map['isArchived'] = !isArchived;
-
-                    // Re-create project from map (keeps it consistent with your storage style)
-                    updated[idx] = PrayerProject.fromMap(map);
-
-                    await widget.onProjectsUpdated(updated);
-                    if (mounted) setState(() {});
-                  },
-                ),
+              IconButton(
+                tooltip: current.isArchived ? 'Unarchive' : 'Archive',
+                icon: Icon(current.isArchived ? Icons.unarchive : Icons.archive_outlined),
+                onPressed: toggleArchive,
+              ),
             ],
           ),
           body: Padding(
@@ -389,13 +384,19 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         const SizedBox(height: 10),
                         LinearProgressIndicator(value: current.progress),
                         const SizedBox(height: 6),
-                        Text(
-                          '${(current.progress * 100).toStringAsFixed(0)}% complete',
-                        ),
+                        Text('${(current.progress * 100).toStringAsFixed(0)}% complete'),
+                        if (current.isArchived) ...[
+                          const SizedBox(height: 10),
+                          const Text(
+                            'This project is archived. Unarchive it to log time.',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ],
                       ],
                     ),
                   ),
                 ),
+
                 const SizedBox(height: 16),
 
                 Card(
@@ -405,10 +406,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       children: [
                         Text(
                           _timerText(isActiveProject ? elapsed : current.carrySeconds),
-                          style: const TextStyle(
-                            fontSize: 34,
-                            fontWeight: FontWeight.w700,
-                          ),
+                          style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 10),
                         if (!isActiveProject && hasSomeOtherActive)
@@ -426,25 +424,21 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             ElevatedButton(
-                              onPressed: isActiveProject
+                              onPressed: canStartTimerHere
                                   ? (s.isRunning
                                       ? null
-                                      : (s.isPaused
-                                          ? widget.session.resume
-                                          : widget.session.start))
+                                      : (s.isPaused ? widget.session.resume : widget.session.start))
                                   : null,
                               child: Text(s.isPaused ? 'Resume' : 'Start'),
                             ),
                             const SizedBox(width: 10),
                             ElevatedButton(
-                              onPressed: isActiveProject && s.isRunning
-                                  ? widget.session.pause
-                                  : null,
+                              onPressed: timerButtonsEnabled && s.isRunning ? widget.session.pause : null,
                               child: const Text('Pause'),
                             ),
                             const SizedBox(width: 10),
                             ElevatedButton(
-                              onPressed: isActiveProject && (s.isRunning || s.isPaused)
+                              onPressed: timerButtonsEnabled && (s.isRunning || s.isPaused)
                                   ? stopAndAddHere
                                   : null,
                               child: const Text('Stop & Add'),
@@ -463,7 +457,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                     leading: const Icon(Icons.history),
                     title: const Text('Add time in retrospect'),
                     subtitle: const Text('Log minutes for a previous day (15-min blocks)'),
-                    onTap: addTimeInRetrospect,
+                    onTap: current.isArchived ? null : addTimeInRetrospect,
                   ),
                 ),
 
@@ -477,10 +471,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       children: [
                         Text(
                           'Notes — ${_fmtDDMMYYYY(selectedDate)} (Day $_selectedDay)',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                         ),
                         const SizedBox(height: 10),
 

@@ -38,6 +38,7 @@ class PrayNowScreen extends StatelessWidget {
   }
 
   bool _isUpcoming(PrayerProject p) => p.dayNumberFor(DateTime.now()) == 0;
+
   bool _isActiveWindow(PrayerProject p) {
     final d = p.dayNumberFor(DateTime.now());
     return d >= 1 && d <= p.durationDays;
@@ -84,7 +85,7 @@ class PrayNowScreen extends StatelessWidget {
         final s = session.state;
         final active = _findProject(projects, s.activeProjectId);
 
-        // session seconds shown on top timer
+        // session seconds shown on top timer (already includes carrySeconds if you selected with it)
         final sessionSeconds = (active == null) ? 0 : session.displayedElapsedSeconds;
 
         // total cumulative seconds prayed for this project (minutes + current session)
@@ -225,7 +226,7 @@ class PrayNowScreen extends StatelessWidget {
               const SizedBox(height: 10),
 
               if (prayNowList.isEmpty)
-                const Text('No active projects right now. (Upcoming/Archived are hidden here.)')
+                const Text('No active projects right now. (Upcoming/Ended/Archived are hidden here.)')
               else
                 ...prayNowList.map((p) {
                   final isSelected = (s.activeProjectId == p.id);

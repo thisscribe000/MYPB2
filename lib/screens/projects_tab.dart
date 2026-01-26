@@ -15,9 +15,6 @@ class ProjectsTab extends StatelessWidget {
     required this.onProjectsUpdated,
   });
 
-  // ---- KEEP THE REST OF YOUR FILE BELOW THIS LINE AS-IS ----
-
-
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
   String _fmtDDMMYYYY(DateTime d) {
@@ -41,15 +38,16 @@ class ProjectsTab extends StatelessWidget {
   }
 
   bool _isUpcoming(PrayerProject p) => p.dayNumberFor(DateTime.now()) == 0;
-
-  
-
+  bool _isEnded(PrayerProject p) => p.dayNumberFor(DateTime.now()) == p.durationDays + 1;
 
   @override
   Widget build(BuildContext context) {
-    final active = projects.where((p) => !_isUpcoming(p) && !p.isArchived).toList();
-final upcoming = projects.where((p) => _isUpcoming(p) && !p.isArchived).toList();
-final archived = projects.where((p) => p.isArchived).toList();
+    final active = projects
+        .where((p) => !p.isArchived && !_isUpcoming(p) && !_isEnded(p))
+        .toList();
+    final upcoming = projects.where((p) => !p.isArchived && _isUpcoming(p)).toList();
+    final ended = projects.where((p) => !p.isArchived && _isEnded(p)).toList();
+    final archived = projects.where((p) => p.isArchived).toList();
 
     // Sort active by most recent prayed
     active.sort((a, b) {
@@ -60,6 +58,20 @@ final archived = projects.where((p) => p.isArchived).toList();
 
     // Sort upcoming by start date
     upcoming.sort((a, b) => a.plannedStartDate.compareTo(b.plannedStartDate));
+
+    // Sort ended by most recently prayed (or end date as fallback)
+    ended.sort((a, b) {
+      final ad = a.lastPrayedAt ?? a.endDate;
+      final bd = b.lastPrayedAt ?? b.endDate;
+      return bd.compareTo(ad);
+    });
+
+    // Sort archived by most recent prayed (fallback planned start)
+    archived.sort((a, b) {
+      final ad = a.lastPrayedAt ?? a.plannedStartDate;
+      final bd = b.lastPrayedAt ?? b.plannedStartDate;
+      return bd.compareTo(ad);
+    });
 
     Widget sectionTitle(String title) => Padding(
           padding: const EdgeInsets.only(top: 10, bottom: 6),
@@ -102,7 +114,7 @@ final archived = projects.where((p) => p.isArchived).toList();
         padding: const EdgeInsets.all(12),
         child: ListView(
           children: [
-            if (active.isNotEmpty) sectionTitle('Active'),
+            sectionTitle('Active'),
             if (active.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
@@ -113,7 +125,7 @@ final archived = projects.where((p) => p.isArchived).toList();
 
             const SizedBox(height: 8),
 
-            if (upcoming.isNotEmpty) sectionTitle('Upcoming'),
+            sectionTitle('Upcoming'),
             if (upcoming.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
@@ -122,10 +134,20 @@ final archived = projects.where((p) => p.isArchived).toList();
             else
               ...upcoming.map(projectCard),
 
-            const SizedBox(height: 80),
             const SizedBox(height: 8),
 
-            if (archived.isNotEmpty) sectionTitle('Archived'),
+            sectionTitle('Ended'),
+            if (ended.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('No ended projects.'),
+              )
+            else
+              ...ended.map(projectCard),
+
+            const SizedBox(height: 8),
+
+            sectionTitle('Archived'),
             if (archived.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
@@ -134,10 +156,10 @@ final archived = projects.where((p) => p.isArchived).toList();
             else
               ...archived.map(projectCard),
 
+            const SizedBox(height: 80),
           ],
         ),
       ),
-      
     );
   }
 }
