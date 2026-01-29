@@ -74,21 +74,67 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     return Colors.green.shade700;
   }
 
+  // ✅ Batch 9.1: weekday header
+  Widget _buildWeekdayHeader() {
+    const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    return Row(
+      children: labels
+          .map(
+            (t) => Expanded(
+              child: Center(
+                child: Text(
+                  t,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ),
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  // ✅ Batch 9.1: real calendar (aligned to weekdays + shows actual date numbers)
   Widget _buildCalendarGrid(PrayerProject p) {
     final totalDays = p.durationDays;
+
+    // Monday=1..Sunday=7 (Dart already uses this)
+    final startWeekday = _dateOnly(p.plannedStartDate).weekday;
+    final leadingBlanks = startWeekday - 1; // Mon -> 0, Tue -> 1, ... Sun -> 6
+    final totalCells = leadingBlanks + totalDays;
 
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: totalDays,
+      itemCount: totalCells,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 7,
         mainAxisSpacing: 6,
         crossAxisSpacing: 6,
       ),
       itemBuilder: (context, index) {
-        final day = index + 1;
+        // leading empty tiles
+        if (index < leadingBlanks) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(6),
+            ),
+          );
+        }
+
+        final day = (index - leadingBlanks) + 1; // 1..durationDays
         final isSelected = day == _selectedDay;
+
+        final date = _dateForDay(p, day);
+        final dateNumber = date.day.toString(); // show actual day-of-month
+
+        final mins = p.dayMinutes[day] ?? 0;
+        final hasMinutes = mins > 0;
 
         return GestureDetector(
           onTap: () {
@@ -101,13 +147,27 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               border: isSelected ? Border.all(color: Colors.black, width: 2) : null,
             ),
             child: Center(
-              child: Text(
-                '$day',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: (p.dayMinutes[day] ?? 0) > 0 ? Colors.white : Colors.black54,
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    dateNumber,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: hasMinutes ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'D$day',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: hasMinutes ? Colors.white70 : Colors.black54,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -203,8 +263,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
         final s = widget.session.state;
         final isActiveProject = (s.activeProjectId == current.id);
-        final hasSomeOtherActive =
-            (s.activeProjectId != null && s.activeProjectId != current.id);
+        final hasSomeOtherActive = (s.activeProjectId != null && s.activeProjectId != current.id);
 
         final elapsed = widget.session.displayedElapsedSeconds;
 
@@ -266,14 +325,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
           final todayDay = updated[idx].dayNumberFor(DateTime.now());
 
-          if (minutesToAdd > 0 &&
-              todayDay >= 1 &&
-              todayDay <= updated[idx].durationDays) {
+          if (minutesToAdd > 0 && todayDay >= 1 && todayDay <= updated[idx].durationDays) {
             updated[idx].totalMinutesPrayed += minutesToAdd;
             updated[idx].addMinutesForDay(todayDay, minutesToAdd);
-          } else if (seconds > 0 &&
-              todayDay >= 1 &&
-              todayDay <= updated[idx].durationDays) {
+          } else if (seconds > 0 && todayDay >= 1 && todayDay <= updated[idx].durationDays) {
             updated[idx].markDayPrayed(todayDay);
           }
 
@@ -328,12 +383,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       dropdownMenuEntries: List.generate(maxDay, (i) => i + 1)
                           .reversed
                           .map((d) {
-                        final date = _dateForDay(updated[idx], d);
-                        return DropdownMenuEntry(
-                          value: d,
-                          label: '${_fmtDDMMYYYY(date)} (Day $d)',
-                        );
-                      }).toList(),
+                            final date = _dateForDay(updated[idx], d);
+                            return DropdownMenuEntry(
+                              value: d,
+                              label: '${_fmtDDMMYYYY(date)} (Day $d)',
+                            );
+                          })
+                          .toList(),
                       onSelected: (v) {
                         if (v != null) chosenDay = v;
                       },
@@ -437,8 +493,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       initialSelection: chosenDay,
                       expandedInsets: EdgeInsets.zero,
                       label: const Text('Day'),
-                      dropdownMenuEntries:
-                          List.generate(maxDay, (i) => i + 1).reversed.map((d) {
+                      dropdownMenuEntries: List.generate(maxDay, (i) => i + 1).reversed.map((d) {
                         final date = _dateForDay(updated[idx], d);
                         return DropdownMenuEntry(
                           value: d,
@@ -595,7 +650,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
                 const SizedBox(height: 16),
 
-                // ✅ Batch 8: Calendar Grid
+                // ✅ Batch 9.1: Calendar Grid (weekday aligned)
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(12),
@@ -606,7 +661,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           'Calendar',
                           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 10),
+                        _buildWeekdayHeader(),
+                        const SizedBox(height: 10),
                         _buildCalendarGrid(current),
                       ],
                     ),
@@ -649,16 +706,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                             ),
                             const SizedBox(width: 10),
                             ElevatedButton(
-                              onPressed: timerButtonsEnabled && s.isRunning
-                                  ? widget.session.pause
-                                  : null,
+                              onPressed: timerButtonsEnabled && s.isRunning ? widget.session.pause : null,
                               child: const Text('Pause'),
                             ),
                             const SizedBox(width: 10),
                             ElevatedButton(
-                              onPressed: timerButtonsEnabled && (s.isRunning || s.isPaused)
-                                  ? stopAndAddHere
-                                  : null,
+                              onPressed: timerButtonsEnabled && (s.isRunning || s.isPaused) ? stopAndAddHere : null,
                               child: const Text('Stop & Add'),
                             ),
                           ],
@@ -774,8 +827,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                           initialText: note.text,
                                           onSave: (newText) async {
                                             final updated = [...widget.projects];
-                                            final idx =
-                                                updated.indexWhere((p) => p.id == current.id);
+                                            final idx = updated.indexWhere((p) => p.id == current.id);
                                             if (idx == -1) return;
 
                                             final list = updated[idx].dayNotes[_selectedDay];
@@ -803,8 +855,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                         await _confirmDelete(
                                           onDelete: () async {
                                             final updated = [...widget.projects];
-                                            final idx =
-                                                updated.indexWhere((p) => p.id == current.id);
+                                            final idx = updated.indexWhere((p) => p.id == current.id);
                                             if (idx == -1) return;
 
                                             final list = updated[idx].dayNotes[_selectedDay];
