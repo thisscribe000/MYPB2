@@ -20,7 +20,6 @@ class PrayNowScreen extends StatelessWidget {
     final h = totalSeconds ~/ 3600;
     final m = (totalSeconds % 3600) ~/ 60;
     final s = totalSeconds % 60;
-    // Hours can be 1–3+ digits, mins/secs always 2 digits
     return '$h:${_fmt2(m)}:${_fmt2(s)}';
   }
 
@@ -47,7 +46,7 @@ class PrayNowScreen extends StatelessWidget {
   List<PrayerProject> _sortedPrayNowProjects() {
     final list = projects
         .where((p) => !p.isArchived)
-        .where((p) => _isActiveWindow(p)) // ✅ hide upcoming + schedule ended
+        .where((p) => _isActiveWindow(p))
         .toList();
 
     list.sort((a, b) {
@@ -66,7 +65,6 @@ class PrayNowScreen extends StatelessWidget {
     if (s.activeProjectId == null) return true;
     if (s.activeProjectId == p.id) return true;
 
-    // ✅ lock switching while running OR paused-with-progress
     if (s.isRunning) return false;
     if (s.isPaused && s.elapsedSeconds > 0) return false;
 
@@ -85,13 +83,10 @@ class PrayNowScreen extends StatelessWidget {
         final s = session.state;
         final active = _findProject(projects, s.activeProjectId);
 
-        // session seconds shown on top timer (already includes carrySeconds if you selected with it)
         final sessionSeconds = (active == null) ? 0 : session.displayedElapsedSeconds;
 
-        // total cumulative seconds prayed for this project (minutes + current session)
-        final totalSecondsForActive = (active == null)
-            ? 0
-            : (active.totalMinutesPrayed * 60) + sessionSeconds;
+        final totalSecondsForActive =
+            (active == null) ? 0 : (active.totalMinutesPrayed * 60) + sessionSeconds;
 
         Future<void> stopAndAdd() async {
           if (active == null) return;
@@ -105,20 +100,24 @@ class PrayNowScreen extends StatelessWidget {
           if (idx == -1) return;
 
           final todayDay = updated[idx].dayNumberFor(DateTime.now());
-          if (seconds > 0 && todayDay >= 1 && todayDay <= updated[idx].durationDays) {
-            updated[idx].markDayPrayed(todayDay);
-          }
 
-          if (minutesToAdd > 0) {
-            updated[idx].totalMinutesPrayed += minutesToAdd;
+          if (minutesToAdd > 0 && todayDay >= 1 && todayDay <= updated[idx].durationDays) {
+            updated[idx].logMinutes(
+              dayNumber: todayDay,
+              minutes: minutesToAdd,
+              prayedAt: DateTime.now(),
+            );
+          } else if (seconds > 0 && todayDay >= 1 && todayDay <= updated[idx].durationDays) {
+            updated[idx].markDayPrayed(todayDay);
+            updated[idx].lastPrayedAt = DateTime.now();
+          } else {
+            updated[idx].lastPrayedAt = DateTime.now();
           }
 
           updated[idx].carrySeconds = remainderSeconds;
-          updated[idx].lastPrayedAt = DateTime.now();
 
           await onProjectsUpdated(updated);
 
-          // keep project selected with leftover seconds
           await session.selectProject(
             active.id,
             initialElapsedSeconds: remainderSeconds,
@@ -180,9 +179,7 @@ class PrayNowScreen extends StatelessWidget {
                   ),
                 ),
               ),
-
               const SizedBox(height: 18),
-
               Center(
                 child: Column(
                   children: [
@@ -199,9 +196,7 @@ class PrayNowScreen extends StatelessWidget {
                   ],
                 ),
               ),
-
               const SizedBox(height: 14),
-
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -216,15 +211,12 @@ class PrayNowScreen extends StatelessWidget {
                   ),
                 ],
               ),
-
               const SizedBox(height: 20),
-
               const Text(
                 'Projects (most recent first)',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10),
-
               if (prayNowList.isEmpty)
                 const Text('No active projects right now. (Upcoming/Ended/Archived are hidden here.)')
               else

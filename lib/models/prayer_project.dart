@@ -80,7 +80,6 @@ class PrayerProject {
   }
 
   /// ✅ Batch 9 helper: Start weekday with Monday=1 ... Sunday=7
-  /// Dart weekday is Mon=1..Sun=7 already, but we lock it here for clarity.
   int get startWeekdayMon1 => _dateOnly(plannedStartDate).weekday;
 
   int dayNumberFor(DateTime date) {
@@ -147,6 +146,20 @@ class PrayerProject {
 
     dayMinutes[dayNumber] = (dayMinutes[dayNumber] ?? 0) + minutes;
     markDayPrayed(dayNumber);
+  }
+
+  /// ✅ Batch 11: one source of truth for logging minutes
+  void logMinutes({
+    required int dayNumber,
+    required int minutes,
+    DateTime? prayedAt,
+  }) {
+    if (minutes <= 0) return;
+    if (dayNumber < 1 || dayNumber > durationDays) return;
+
+    totalMinutesPrayed += minutes;
+    addMinutesForDay(dayNumber, minutes);
+    lastPrayedAt = prayedAt ?? DateTime.now();
   }
 
   int get currentStreak {
@@ -266,16 +279,19 @@ class PrayerProject {
       }
     }
 
-    // Parse dayMinutes
     final Map<int, int> parsedDayMinutes = {};
     final rawDayMinutes = map['dayMinutes'];
-
     if (rawDayMinutes is Map) {
       rawDayMinutes.forEach((k, v) {
         final day = int.tryParse(k.toString());
         final mins = int.tryParse(v.toString());
         if (day != null && mins != null) parsedDayMinutes[day] = mins;
       });
+    }
+
+    // ✅ Batch 11: if dayMinutes exists but prayedDays is missing, rebuild prayedDays from dayMinutes keys
+    if (parsedPrayedDays.isEmpty && parsedDayMinutes.isNotEmpty) {
+      parsedPrayedDays.addAll(parsedDayMinutes.keys);
     }
 
     // Migration safety: older data may have minutes but no prayedDays
