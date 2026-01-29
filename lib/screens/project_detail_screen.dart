@@ -64,6 +64,58 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     return 'Day $d/${p.durationDays}';
   }
 
+  // ✅ Batch 8: Calendar helpers
+  Color _dayColor(PrayerProject p, int day) {
+    final mins = p.dayMinutes[day] ?? 0;
+
+    if (mins == 0) return Colors.grey.shade300;
+    if (mins < 30) return Colors.green.shade200;
+    if (mins < 60) return Colors.green.shade400;
+    return Colors.green.shade700;
+  }
+
+  Widget _buildCalendarGrid(PrayerProject p) {
+    final totalDays = p.durationDays;
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: totalDays,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 7,
+        mainAxisSpacing: 6,
+        crossAxisSpacing: 6,
+      ),
+      itemBuilder: (context, index) {
+        final day = index + 1;
+        final isSelected = day == _selectedDay;
+
+        return GestureDetector(
+          onTap: () {
+            setState(() => _selectedDay = day);
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              color: _dayColor(p, day),
+              borderRadius: BorderRadius.circular(6),
+              border: isSelected ? Border.all(color: Colors.black, width: 2) : null,
+            ),
+            child: Center(
+              child: Text(
+                '$day',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: (p.dayMinutes[day] ?? 0) > 0 ? Colors.white : Colors.black54,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _editNoteDialog({
     required String initialText,
     required Future<void> Function(String newText) onSave,
@@ -213,12 +265,16 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           if (idx == -1) return;
 
           final todayDay = updated[idx].dayNumberFor(DateTime.now());
-          if (seconds > 0 && todayDay >= 1 && todayDay <= updated[idx].durationDays) {
-            updated[idx].markDayPrayed(todayDay);
-          }
 
-          if (minutesToAdd > 0) {
+          if (minutesToAdd > 0 &&
+              todayDay >= 1 &&
+              todayDay <= updated[idx].durationDays) {
             updated[idx].totalMinutesPrayed += minutesToAdd;
+            updated[idx].addMinutesForDay(todayDay, minutesToAdd);
+          } else if (seconds > 0 &&
+              todayDay >= 1 &&
+              todayDay <= updated[idx].durationDays) {
+            updated[idx].markDayPrayed(todayDay);
           }
 
           updated[idx].carrySeconds = remainderSeconds;
@@ -316,7 +372,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           final safeDay = chosenDay.clamp(1, maxDay);
 
           updated[idx].totalMinutesPrayed += chosenMinutes;
-          updated[idx].markDayPrayed(safeDay);
+          updated[idx].addMinutesForDay(safeDay, chosenMinutes);
           updated[idx].lastPrayedAt = DateTime.now();
 
           await widget.onProjectsUpdated(updated);
@@ -424,7 +480,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           if (ok != true) return;
 
           updated[idx].totalMinutesPrayed += chosenMinutes;
-          updated[idx].markDayPrayed(chosenDay);
+          updated[idx].addMinutesForDay(chosenDay, chosenMinutes);
           updated[idx].lastPrayedAt = DateTime.now();
 
           await widget.onProjectsUpdated(updated);
@@ -434,6 +490,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             setState(() {});
           }
         }
+
+        // History list (latest first)
+        final historyDays = current.prayedDays.toList()..sort((a, b) => b.compareTo(a));
 
         final notesForSelectedDay = current.dayNotes[_selectedDay] ?? [];
         final selectedDate = _dateForDay(current, _selectedDay);
@@ -481,6 +540,74 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                             style: TextStyle(color: Colors.grey),
                           ),
                         ],
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // ✅ Batch 7: Streak + History
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Streak',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        const SizedBox(height: 6),
+                        Text('Current: ${current.currentStreak} day(s)'),
+                        Text('Best: ${current.bestStreak} day(s)'),
+                        const Divider(height: 24),
+                        const Text(
+                          'History',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        const SizedBox(height: 8),
+                        if (historyDays.isEmpty)
+                          const Text(
+                            'No logged days yet.',
+                            style: TextStyle(color: Colors.grey),
+                          )
+                        else
+                          ...historyDays.map((d) {
+                            final date = _dateForDay(current, d);
+                            final mins = current.dayMinutes[d] ?? 0;
+                            final notesCount = current.dayNotes[d]?.length ?? 0;
+
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text('${_fmtDDMMYYYY(date)} (Day $d)'),
+                              subtitle: Text('$mins min • $notesCount note(s)'),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: () {
+                                setState(() => _selectedDay = d);
+                              },
+                            );
+                          }),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // ✅ Batch 8: Calendar Grid
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Calendar',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildCalendarGrid(current),
                       ],
                     ),
                   ),
