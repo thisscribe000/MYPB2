@@ -169,6 +169,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           }
         }
 
+        int maxDayForProject(PrayerProject p) {
+          final nowDay = p.dayNumberFor(DateTime.now());
+          if (nowDay <= 0) return 1;
+          if (nowDay > p.durationDays) return p.durationDays;
+          return nowDay;
+        }
+
         Future<void> toggleArchive() async {
           // Prevent archiving while timer is running/paused on THIS project
           if (isActiveProject && (s.isRunning || s.isPaused)) {
@@ -235,6 +242,91 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           }
         }
 
+        // ✅ NEW: Manual add time (moved here from Pray Now)
+        Future<void> addTimeManually() async {
+          if (current.isArchived) {
+            _snack('This project is archived. Unarchive it to log time.');
+            return;
+          }
+
+          final updated = [...widget.projects];
+          final idx = updated.indexWhere((p) => p.id == current.id);
+          if (idx == -1) return;
+
+          final maxDay = maxDayForProject(updated[idx]);
+          int chosenDay = maxDay;
+          int chosenMinutes = 15;
+
+          final ok = await showDialog<bool>(
+            context: context,
+            builder: (_) {
+              return AlertDialog(
+                title: const Text('Add time manually'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownMenu<int>(
+                      initialSelection: chosenDay,
+                      expandedInsets: EdgeInsets.zero,
+                      label: const Text('Day'),
+                      dropdownMenuEntries: List.generate(maxDay, (i) => i + 1)
+                          .reversed
+                          .map((d) {
+                        final date = _dateForDay(updated[idx], d);
+                        return DropdownMenuEntry(
+                          value: d,
+                          label: '${_fmtDDMMYYYY(date)} (Day $d)',
+                        );
+                      }).toList(),
+                      onSelected: (v) {
+                        if (v != null) chosenDay = v;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownMenu<int>(
+                      initialSelection: chosenMinutes,
+                      expandedInsets: EdgeInsets.zero,
+                      label: const Text('Minutes'),
+                      dropdownMenuEntries: List.generate(24, (i) => (i + 1) * 15)
+                          .map((m) => DropdownMenuEntry(value: m, label: '$m minutes'))
+                          .toList(),
+                      onSelected: (v) {
+                        if (v != null) chosenMinutes = v;
+                      },
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Add'),
+                  ),
+                ],
+              );
+            },
+          );
+
+          if (ok != true) return;
+
+          // Safety clamp
+          final safeDay = chosenDay.clamp(1, maxDay);
+
+          updated[idx].totalMinutesPrayed += chosenMinutes;
+          updated[idx].markDayPrayed(safeDay);
+          updated[idx].lastPrayedAt = DateTime.now();
+
+          await widget.onProjectsUpdated(updated);
+          _snack('Added $chosenMinutes min to Day $safeDay.');
+
+          if (mounted) {
+            setState(() {});
+          }
+        }
+
         Future<void> addNote() async {
           final text = _noteCtrl.text.trim();
           if (text.isEmpty) return;
@@ -272,10 +364,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           final idx = updated.indexWhere((p) => p.id == current.id);
           if (idx == -1) return;
 
-          final nowDay = updated[idx].dayNumberFor(DateTime.now());
-          final maxDay = (nowDay <= 0)
-              ? 1
-              : (nowDay > updated[idx].durationDays ? updated[idx].durationDays : nowDay);
+          final maxDay = maxDayForProject(updated[idx]);
 
           int chosenDay = maxDay;
           int chosenMinutes = 15;
@@ -433,7 +522,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                             ),
                             const SizedBox(width: 10),
                             ElevatedButton(
-                              onPressed: timerButtonsEnabled && s.isRunning ? widget.session.pause : null,
+                              onPressed: timerButtonsEnabled && s.isRunning
+                                  ? widget.session.pause
+                                  : null,
                               child: const Text('Pause'),
                             ),
                             const SizedBox(width: 10),
@@ -452,11 +543,23 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
                 const SizedBox(height: 16),
 
+                // ✅ NEW BUTTON (Batch 6)
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.edit_calendar),
+                    title: const Text('Add time manually'),
+                    subtitle: const Text('Log minutes to a chosen day (15-min blocks)'),
+                    onTap: current.isArchived ? null : addTimeManually,
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.history),
                     title: const Text('Add time in retrospect'),
-                    subtitle: const Text('Log minutes for a previous day (15-min blocks)'),
+                    subtitle: const Text('Quick log (15-min blocks)'),
                     onTap: current.isArchived ? null : addTimeInRetrospect,
                   ),
                 ),
